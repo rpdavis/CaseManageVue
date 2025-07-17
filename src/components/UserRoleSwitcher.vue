@@ -17,7 +17,7 @@
       
       <div class="role-selector">
         <label for="role-select">Switch to Role:</label>
-        <select id="role-select" v-model="selectedRole">
+        <select id="role-select" v-model="selectedRole" @change="switchRole">
           <option value="">-- Select Role --</option>
           <option v-for="role in availableRoles" :key="role.value" :value="role.value">
             {{ role.label }}
@@ -27,7 +27,7 @@
       
       <div class="real-user-selector">
         <label for="real-user-select">Switch to User:</label>
-        <select id="real-user-select" v-model="selectedRealUserId">
+        <select id="real-user-select" v-model="selectedRealUserId" @change="switchToRealUser">
           <option value="">-- Select User --</option>
           <optgroup v-for="role in availableRoles" :label="role.label" :key="role.value">
             <option v-for="user in usersByRole[role.value]" :key="user.id" :value="user.id">
@@ -114,7 +114,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/authStore'
 import { usePermissions } from '@/composables/usePermissions'
 import { useDebugMenu } from '@/composables/useDebugMenu'
@@ -303,16 +303,6 @@ export default {
       authStore.setUser(user)
       localStorage.setItem('debug-user', JSON.stringify(user))
     }
-
-    // Watch dropdown selections and trigger switch with debug logs
-    watch(selectedRole, (newRole, oldRole) => {
-      console.debug('[DebugMenu] Role dropdown changed:', oldRole, '->', newRole)
-      if (newRole) switchRole()
-    })
-    watch(selectedRealUserId, (newId, oldId) => {
-      console.debug('[DebugMenu] User dropdown changed:', oldId, '->', newId)
-      if (newId) switchToRealUser()
-    })
 
     const resetToRealUser = () => {
       // Remove debug user from localStorage
