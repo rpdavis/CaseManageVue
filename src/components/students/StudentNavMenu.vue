@@ -63,7 +63,7 @@
         <div v-if="canShowDebugMenu" class="nav-section">
           <h4>Debug</h4>
           <div class="nav-buttons">
-            <button @click="onDebugMenuClick" class="nav-btn secondary">
+            <button @click="toggleDebugMenu" class="nav-btn secondary">
               <span>🔧</span> {{ isDebugMenuVisible ? 'Hide' : 'Show' }} Debug Menu
             </button>
           </div>
@@ -117,12 +117,6 @@ const props = defineProps({
 const emit = defineEmits(['action'])
 
 const { isDebugMenuVisible, canShowDebugMenu, toggleDebugMenu } = useDebugMenu()
-// Toggle debug panel and close nav menu
-function onDebugMenuClick() {
-  toggleDebugMenu()
-  closeMenu()
-}
-
 const isMenuOpen = ref(false)
 
 function toggleMenu() {
