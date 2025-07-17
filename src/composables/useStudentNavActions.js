@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useAuthStore } from '@/store/authStore'
 
 export function useStudentNavActions(studentData) {
   const { router, fetchData } = studentData
@@ -86,7 +87,6 @@ export function useStudentNavActions(studentData) {
   // Logout handler
   const handleLogout = async () => {
     try {
-      const { useAuthStore } = await import('@/store/authStore')
       const authStore = useAuthStore()
       await authStore.logout()
       router.push('/login')

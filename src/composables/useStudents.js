@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { collection, getDocs, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { performRateLimitedBatchOperation } from '../utils/validation'
+import { useGoogleSheetsRealtime } from './useGoogleSheetsRealtime'
 
 // Helper function to convert Firestore Maps to plain objects
 function convertFirestoreMaps(obj) {
@@ -37,18 +38,10 @@ function convertFirestoreMaps(obj) {
 
 export default function useStudents() {
   const students = ref([])
-  let googleSheetsSync = null
+  const googleSheetsSync = useGoogleSheetsRealtime()
 
-  // Lazy load Google Sheets sync only when needed
+  // Eagerly created Google Sheets sync; this just returns it
   async function getGoogleSheetsSync() {
-    if (!googleSheetsSync) {
-      try {
-        const { useGoogleSheetsRealtime } = await import('./useGoogleSheetsRealtime')
-        googleSheetsSync = useGoogleSheetsRealtime()
-      } catch (error) {
-        console.error('Failed to load Google Sheets sync:', error)
-      }
-    }
     return googleSheetsSync
   }
 
