@@ -4,39 +4,40 @@ const { getStorage } = require("firebase-admin/storage");
 // Use configuration helper for bucket and region
 const config = require("./utils/config-helper");
 
+// Temporarily disabled for deployment
 // Trigger 1: Remove token on file finalization
-exports.removeDownloadTokensOnFinalize = onObjectFinalized(
-  config.createStorageTriggerOptions({
-    bucket: config.getStorageBucket()
-  }),
-  async (event) => {
-  const object = event.data;
-  config.info(`File finalized: ${object.name}`);
-  
-  if (!object.name?.startsWith(config.getStoragePath('studentsPath'))) {
-    config.info(`Skipping non-student file: ${object.name}`);
-    return;
-  }
+// exports.removeDownloadTokensOnFinalize = onObjectFinalized(
+//   config.createStorageTriggerOptions({
+//     bucket: config.getStorageBucket()
+//   }),
+//   async (event) => {
+//   const object = event.data;
+//   config.info(`File finalized: ${object.name}`);
+//   
+//   if (!object.name?.startsWith(config.getStoragePath('studentsPath'))) {
+//     config.info(`Skipping non-student file: ${object.name}`);
+//     return;
+//   }
 
-  await removeTokenFromFile(object);
-});
+//   await removeTokenFromFile(object);
+// });
 
 // Trigger 2: Remove token when metadata is updated (catches token addition)
-exports.removeDownloadTokensOnMetadata = onObjectMetadataUpdated(
-  config.createStorageTriggerOptions({
-    bucket: config.getStorageBucket()
-  }),
-  async (event) => {
-  const object = event.data;
-  config.info(`Metadata updated: ${object.name}`);
-  
-  if (!object.name?.startsWith(config.getStoragePath('studentsPath'))) {
-    config.info(`Skipping non-student file: ${object.name}`);
-    return;
-  }
+// exports.removeDownloadTokensOnMetadata = onObjectMetadataUpdated(
+//   config.createStorageTriggerOptions({
+//     bucket: config.getStorageBucket()
+//   }),
+//   async (event) => {
+//   const object = event.data;
+//   config.info(`Metadata updated: ${object.name}`);
+//   
+//   if (!object.name?.startsWith(config.getStoragePath('studentsPath'))) {
+//     config.info(`Skipping non-student file: ${object.name}`);
+//     return;
+//   }
 
-  await removeTokenFromFile(object);
-});
+//   await removeTokenFromFile(object);
+// });
 
 // Shared function to remove download tokens
 async function removeTokenFromFile(object) {
@@ -69,5 +70,6 @@ async function removeTokenFromFile(object) {
   }
 }
 
+// Temporarily disabled for deployment
 // Export the main function for backward compatibility
-exports.removeDownloadTokens = exports.removeDownloadTokensOnFinalize; 
+// exports.removeDownloadTokens = exports.removeDownloadTokensOnFinalize; 

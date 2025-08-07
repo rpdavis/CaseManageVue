@@ -277,13 +277,23 @@
     />
     
     <TeacherFeedbackDialog
-      v-if="showFeedbackDialog"
+      v-if="showFeedbackDialog && canSendFeedbackForStudent"
       :student="getStudentById(feedbackStudentId)"
       :current-user="currentUser"
       :user-map="userMapObj"
       @close="showFeedbackDialog = false"
       @form-sent="handleFormSent"
     />
+    
+    <!-- Show error message if user tries to access feedback without permission -->
+    <div v-if="showFeedbackDialog && !canSendFeedbackForStudent" class="permission-error">
+      <div class="error-content">
+        <h3>Access Denied</h3>
+        <p>You don't have permission to send teacher feedback forms.</p>
+        <p>Only case managers, administrators, and SPED chairs can send feedback forms.</p>
+        <button @click="showFeedbackDialog = false" class="btn-primary">Close</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -330,7 +340,25 @@ import TeacherFeedbackDialog from '@/components/students/TeacherFeedbackDialog.v
 // Initialize composables
 const studentData = useStudentData()
 const filterData = useStudentFilters(studentData)
-  const roleView = useRoleBasedView(studentData, filterData)
+const roleView = useRoleBasedView(studentData, filterData)
+
+// Import RoleUtils
+import { RoleUtils } from '@/composables/roles/roleConfig'
+
+// Check if user can send feedback for the selected student
+const canSendFeedbackForStudent = computed(() => {
+  if (!showFeedbackDialog.value || !feedbackStudentId.value) return false
+  
+  const student = getStudentById(feedbackStudentId.value)
+  if (!student || !currentUser.value) return false
+  
+  return RoleUtils.canSendFeedback(
+    currentUser.value.uid,
+    currentUser.value.role,
+    student,
+    studentData
+  )
+})
 
 // Debug: Watch for paraeducator visible students changes
 console.log('🔍 STUDENTS VIEW DEBUG: Setting up watcher, currentRole:', roleView.currentRole?.value)
@@ -967,6 +995,52 @@ const selectedRadioText = computed(() => {
   .students-view {
     visibility: visible !important;
   }
+}
+
+/* Permission Error Dialog */
+.permission-error {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.error-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.error-content h3 {
+  color: #d32f2f;
+  margin-bottom: 1rem;
+}
+
+.error-content p {
+  margin-bottom: 1rem;
+  color: #666;
+}
+
+.error-content .btn-primary {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-content .btn-primary:hover {
+  background: #1565c0;
 }
 
 </style>

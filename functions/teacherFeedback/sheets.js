@@ -51,64 +51,25 @@ async function checkDriveQuota(drive, userEmail) {
   }
 }
 
-// Check service account's own Drive storage quota
-async function checkServiceAccountStorage() {
-  try {
-    const drive = await createDriveClient();
-    
-    // Get about information for the service account's own drive
-    const about = await drive.about.get({
-      fields: 'storageQuota,user'
-    });
-    
-    const quota = about.data.storageQuota;
-    const user = about.data.user;
-    
-    // Handle case where quota is not available or is 0
-    const total = parseInt(quota.limit) || 0;
-    const used = parseInt(quota.usage) || 0;
-    const available = Math.max(0, total - used);
-    const usagePercent = total > 0 ? Math.round((used / total) * 100) : 0;
-    
-    config.info(`Service Account Drive Storage:`, {
-      user: user.emailAddress,
-      total: total,
-      used: used,
-      available: available,
-      usagePercent: usagePercent
-    });
-    
-    return {
-      success: true,
-      quota: {
-        total: total,
-        used: used,
-        available: available,
-        usagePercent: usagePercent
-      },
-      user: user.emailAddress
-    };
-    
-  } catch (error) {
-    config.error('Error checking service account storage:', error);
-    throw new HttpsError('internal', 'Failed to check service account storage: ' + error.message);
-  }
-}
+// DISABLED: Check service account's own Drive storage quota
+// This function has been disabled as we're no longer using service accounts for feedback forms
+// async function checkServiceAccountStorage() {
+//   // Function disabled - service account approach removed
+// }
 
 // Create Google Sheet in either personal drive or shared drive
 async function createGoogleSheet(title, description, userEmail, userName, schoolId = null, studentId = null, studentName = null, folderId = null) {
   try {
-    // Use OAuth 2.0 with user's personal account instead of service account
+    // Use OAuth 2.0 with user's personal account
     const auth = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI || config.getAppUrl()
     );
     
-    // For now, we'll use the service account but create files in the user's shared folder
-    // This is a simpler approach that should work immediately
-    const sheets = await createSheetsClient();
-    const drive = await createDriveClient();
+    // Create clients using personal account authentication
+    const sheets = google.sheets({ version: 'v4', auth });
+    const drive = google.drive({ version: 'v3', auth });
 
     // Get school data if schoolId provided
     let schoolData = null;
@@ -162,9 +123,9 @@ async function createGoogleSheet(title, description, userEmail, userName, school
     
     // Provide more helpful error messages
     if (error.message.includes('storage quota has been exceeded')) {
-      throw new HttpsError('resource-exhausted', 'Service account storage quota exceeded (0 bytes available). This is a known issue. The service account needs to be configured with Google Drive storage access. For now, please use the "Check Service Account Storage" button to verify this issue.');
+      throw new HttpsError('resource-exhausted', 'Google Drive storage quota exceeded. Please check your Google Drive storage space.');
     } else if (error.message.includes('permission') || error.message.includes('access') || error.message.includes('caller does not have permission')) {
-      throw new HttpsError('permission-denied', `Cannot access your Google Drive. Please share the folder with: ${config.getServiceAccountEmail()} with Editor permissions.`);
+      throw new HttpsError('permission-denied', 'Cannot access your Google Drive. Please check your permissions and try again.');
     } else {
       throw new HttpsError('internal', 'Failed to create Google Sheet: ' + error.message);
     }
@@ -938,6 +899,6 @@ async function addStudentToTab(spreadsheetId, tabName, studentName, studentId) {
 module.exports = {
   createGoogleSheet,
   createGoogleSheetWithUserAuth,
-  checkServiceAccountStorage,
+  // checkServiceAccountStorage, // DISABLED - service account approach removed
   getSpreadsheetData
 }; 

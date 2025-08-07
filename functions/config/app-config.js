@@ -207,15 +207,56 @@ module.exports = {
 
 // Helper function to get environment-specific config
 function getConfig() {
-  const env = process.env.NODE_ENV || 'production';
-  const baseConfig = module.exports;
-  const envConfig = baseConfig.environments[env] || {};
-  
-  return {
-    ...baseConfig,
-    ...envConfig,
-    currentEnvironment: env
-  };
+  try {
+    const env = process.env.NODE_ENV || 'production';
+    const baseConfig = module.exports;
+    const envConfig = baseConfig.environments[env] || {};
+    
+    return {
+      ...baseConfig,
+      ...envConfig,
+      currentEnvironment: env
+    };
+  } catch (error) {
+    // Fallback to hardcoded values if environment variables are not available
+    console.warn('Environment variables not available, using fallback config');
+    return {
+      firebase: {
+        projectId: 'casemangervue',
+        region: 'us-central1',
+        storageRegion: 'us-west1',
+        storageBucket: 'casemangervue.appspot.com'
+      },
+      functions: {
+        defaultRegion: 'us-central1',
+        storageRegion: 'us-west1',
+        memory: '256MB',
+        timeoutSeconds: 540,
+        maxInstances: 10
+      },
+      collections: {
+        students: 'students',
+        users: 'users',
+        usersByUID: 'usersByUID',
+        aideSchedules: 'aideSchedules',
+        emailLogs: 'emailLogs',
+        schools: 'schools'
+      },
+      storage: {
+        studentsPath: 'students',
+        downloadTokenExpiry: 15 * 60 * 1000,
+        signedUrlExpiry: 5 * 60 * 1000
+      },
+      roles: {
+        validRoles: ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair', 'case_manager', 'teacher', 'service_provider', 'paraeducator'],
+        adminRoles: ['admin', 'school_admin', 'admin_504', 'sped_chair'],
+        superAdminRoles: ['admin', 'school_admin'],
+        staffRoles: ['case_manager', 'teacher', 'service_provider', 'paraeducator'],
+        fullReadAccessRoles: ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+      },
+      currentEnvironment: 'production'
+    };
+  }
 }
 
 module.exports.getConfig = getConfig;

@@ -1,10 +1,22 @@
 <template>
   <div class="modal-overlay" @click="closeDialog">
     <div class="modal-content" @click.stop>
-      <div class="modal-header">
-        <h3>Send Teacher Feedback Form</h3>
-        <button @click="closeDialog" class="close-btn">×</button>
+      <!-- Permission Check -->
+      <div v-if="!canSendFeedback" class="permission-error">
+        <div class="error-content">
+          <h3>Access Denied</h3>
+          <p>You don't have permission to send teacher feedback forms.</p>
+          <p>Only case managers, administrators, and SPED chairs can send feedback forms.</p>
+          <button @click="closeDialog" class="btn-primary">Close</button>
+        </div>
       </div>
+      
+      <!-- Main Dialog Content -->
+      <div v-else>
+        <div class="modal-header">
+          <h3>Send Teacher Feedback Form</h3>
+          <button @click="closeDialog" class="close-btn">×</button>
+        </div>
       
       <div class="modal-body">
         <!-- Student Info -->
@@ -159,6 +171,7 @@
           <span v-else>📝 Create New Form</span>
         </button>
       </div>
+      </div> <!-- Close main dialog content div -->
     </div>
   </div>
 </template>
@@ -181,8 +194,28 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'form-sent'])
 
-// Composables
-const { activeForms } = useTeacherFeedback()
+// Import RoleUtils for permission checking
+import { RoleUtils } from '@/composables/roles/roleConfig'
+
+// Check if user can send feedback - only allow specific roles
+const canSendFeedback = computed(() => {
+  if (!props.currentUser?.role) return false
+  
+  const allowedRoles = ['admin', 'school_admin', 'admin_504', 'sped_chair', 'case_manager']
+  return allowedRoles.includes(props.currentUser.role)
+})
+
+// Composables - only load teacher feedback if user has permission
+let teacherFeedback
+let activeForms
+
+if (canSendFeedback.value) {
+  teacherFeedback = useTeacherFeedback()
+  activeForms = teacherFeedback.activeForms
+} else {
+  activeForms = ref([])
+}
+
 const { users, userList, fetchUsers } = useUsers()
 
 // State
@@ -1001,5 +1034,41 @@ watch(teachersForStudent, (newTeachers) => {
 .primary-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Permission Error Dialog */
+.permission-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.error-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.error-content h3 {
+  color: #d32f2f;
+  margin-bottom: 1rem;
+}
+
+.error-content p {
+  margin-bottom: 1rem;
+  color: #666;
+}
+
+.error-content .btn-primary {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-content .btn-primary:hover {
+  background: #1565c0;
 }
 </style> 

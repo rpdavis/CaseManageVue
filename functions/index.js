@@ -279,9 +279,15 @@ exports.getAeriesToken = onCall(
 });
 
 // ─── TEACHER FEEDBACK FUNCTIONS ──────────────────────────────────────────────
-exports.createFeedbackFormSheet = teacherFeedbackFunctions.createFeedbackFormSheet;
+// exports.createFeedbackFormSheet = teacherFeedbackFunctions.createFeedbackFormSheet; // DISABLED - service account approach removed
 exports.createFeedbackFormSheetWithUserAuth = teacherFeedbackFunctions.createFeedbackFormSheetWithUserAuth;
-exports.checkServiceAccountStorage = teacherFeedbackFunctions.checkServiceAccountStorage;
+// exports.checkServiceAccountStorage = teacherFeedbackFunctions.checkServiceAccountStorage; // DISABLED - service account approach removed
+
+// ─── CASE MANAGER FEEDBACK SYSTEM FUNCTIONS ──────────────────────────────────
+exports.createCaseManagerFeedbackSystem = teacherFeedbackFunctions.createCaseManagerFeedbackSystem;
+exports.getCaseManagerFeedbackSystem = teacherFeedbackFunctions.getCaseManagerFeedbackSystem;
+exports.updateCaseManagerDocument = teacherFeedbackFunctions.updateCaseManagerDocument;
+exports.generateFeedbackDocument = teacherFeedbackFunctions.generateFeedbackDocument;
 
 exports.getStudentFeedback = onCall(
   config.createFunctionOptions(), 

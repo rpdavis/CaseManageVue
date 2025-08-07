@@ -133,6 +133,14 @@ class ConfigHelper {
     return this.config.googleDrive;
   }
 
+  getServiceAccountEmail() {
+    return `${this.getProjectId()}@${this.getProjectId()}.iam.gserviceaccount.com`;
+  }
+
+  getAppUrl() {
+    return `https://${this.getProjectId()}.web.app`;
+  }
+
   // ─── SECURITY CONFIGURATION ───────────────────────────────────────────────
   getSecurityConfig() {
     return this.config.security;
@@ -299,7 +307,15 @@ class ConfigHelper {
   }
 }
 
-// Create singleton instance
-const configHelper = new ConfigHelper();
+// Create lazy-loaded singleton instance
+let configHelperInstance = null;
 
-module.exports = configHelper;
+function getConfigHelper() {
+  if (!configHelperInstance) {
+    configHelperInstance = new ConfigHelper();
+  }
+  return configHelperInstance;
+}
+
+// Export a function that returns the config helper
+module.exports = getConfigHelper();

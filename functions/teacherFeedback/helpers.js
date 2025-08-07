@@ -191,7 +191,6 @@ module.exports = {
   getDriveConfig,
   isUsingSharedDrive,
   requiresPersonalDriveSharing,
-  ADMIN_ROLES,
   requireAuth,
   requireRole,
   validateRequired,
