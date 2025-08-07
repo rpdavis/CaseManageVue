@@ -6,13 +6,15 @@ const { getFirestore } = require("firebase-admin/firestore");
 
 // Import modular components
 const {
-  ADMIN_ROLES,
   requireAuth,
   requireRole,
   sanitizeString,
   validateRequired,
   extractFormId
 } = require("./helpers");
+
+// Import configuration helper
+const config = require("../utils/config-helper");
 
 const {
   createGoogleSheet,
@@ -33,10 +35,9 @@ const db = getFirestore();
 // ─── CLOUD FUNCTIONS ─────────────────────────────────────────────────────────
 
 // Get or create school for user
-exports.getOrCreateSchool = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.getOrCreateSchool = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -60,10 +61,9 @@ exports.getOrCreateSchool = onCall({
 });
 
 // Add school admin
-exports.addSchoolAdmin = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.addSchoolAdmin = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -84,10 +84,9 @@ exports.addSchoolAdmin = onCall({
 });
 
 // Get school templates
-exports.getSchoolTemplates = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.getSchoolTemplates = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -108,10 +107,9 @@ exports.getSchoolTemplates = onCall({
 });
 
 // Create school template
-exports.createSchoolTemplate = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.createSchoolTemplate = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -132,10 +130,9 @@ exports.createSchoolTemplate = onCall({
 });
 
 // Get user's school information
-exports.getUserSchool = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.getUserSchool = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -154,13 +151,13 @@ exports.getUserSchool = onCall({
 });
 
 // Create Google Sheet with service account (for shared drive)
-exports.createFeedbackFormSheet = onCall({
-  region: "us-central1",
-  maxInstances: 10,
-  serviceAccount: "casemanagevue@casemangervue.iam.gserviceaccount.com"
-}, async (request) => {
-  try {
-    requireRole(request, ADMIN_ROLES);
+exports.createFeedbackFormSheet = onCall(
+  config.createFunctionOptions({
+    serviceAccount: config.getServiceAccountEmail()
+  }),
+  async (request) => {
+    try {
+      requireRole(request, config.getAdminRoles());
     
     const { title, description, formUrl, studentId, studentName, folderId } = request.data;
     
@@ -209,12 +206,11 @@ exports.createFeedbackFormSheet = onCall({
 });
 
 // Create Google Sheet using user's personal Google account
-exports.createFeedbackFormSheetWithUserAuth = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
-  try {
-    requireRole(request, ADMIN_ROLES);
+exports.createFeedbackFormSheetWithUserAuth = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
+    try {
+      requireRole(request, config.getAdminRoles());
     
     const { title, description, formUrl, studentId, studentName, folderId, accessToken } = request.data;
     
@@ -262,12 +258,11 @@ exports.createFeedbackFormSheetWithUserAuth = onCall({
 });
 
 // Check service account's Drive storage quota
-exports.checkServiceAccountStorage = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
-  try {
-    requireRole(request, ADMIN_ROLES);
+exports.checkServiceAccountStorage = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
+    try {
+      requireRole(request, config.getAdminRoles());
     
     const { checkServiceAccountStorage } = require("./sheets");
     const result = await checkServiceAccountStorage();

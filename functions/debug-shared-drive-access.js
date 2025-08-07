@@ -1,10 +1,11 @@
 const { onCall } = require("firebase-functions/v2/https");
 const { google } = require("googleapis");
 const { requireAuth, sanitizeString, validateRequired } = require("./teacherFeedback/helpers");
+const config = require("./utils/config-helper");
 
-exports.debugSharedDriveAccess = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.debugSharedDriveAccess = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -15,25 +16,25 @@ exports.debugSharedDriveAccess = onCall({
     
     const sanitizedDriveId = sanitizeString(sharedDriveId, 50);
     
-    console.log(`🔍 Debugging Shared Drive access for: ${sanitizedDriveId}`);
-    console.log(`👤 User: ${userEmail}`);
+    config.info(`Debugging Shared Drive access for: ${sanitizedDriveId}`);
+    config.info(`User: ${userEmail}`);
     
     // Test 1: Basic authentication
-    console.log('🔍 Test 1: Checking authentication...');
+    config.info('Test 1: Checking authentication...');
     const auth = new google.auth.GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/drive']
     });
     
     const client = await auth.getClient();
-    console.log('✅ Authentication successful');
+    config.success('Authentication successful');
     
     // Test 2: Get service account info
-    console.log('🔍 Test 2: Getting service account info...');
+    config.info('Test 2: Getting service account info...');
     const projectId = await auth.getProjectId();
-    console.log(`✅ Project ID: ${projectId}`);
+    config.success(`Project ID: ${projectId}`);
     
     // Test 3: Try to get Shared Drive metadata
-    console.log('🔍 Test 3: Getting Shared Drive metadata...');
+    config.info('Test 3: Getting Shared Drive metadata...');
     const drive = google.drive({ version: 'v3', auth: client });
     
     try {
@@ -41,13 +42,13 @@ exports.debugSharedDriveAccess = onCall({
         driveId: sanitizedDriveId,
         supportsAllDrives: true
       });
-      console.log('✅ Shared Drive metadata retrieved:', {
+      config.success('Shared Drive metadata retrieved:', {
         name: driveInfo.data.name,
         id: driveInfo.data.id,
         restrictions: driveInfo.data.restrictions
       });
     } catch (driveError) {
-      console.error('❌ Error getting Shared Drive metadata:', driveError.message);
+      config.error('Error getting Shared Drive metadata:', driveError);
       return {
         success: false,
         error: `Cannot access Shared Drive metadata: ${driveError.message}`,
@@ -60,7 +61,7 @@ exports.debugSharedDriveAccess = onCall({
     }
     
     // Test 4: Try to list files
-    console.log('🔍 Test 4: Listing files in Shared Drive...');
+    config.info('Test 4: Listing files in Shared Drive...');
     try {
       const filesList = await drive.files.list({
         q: `'${sanitizedDriveId}' in parents`,
@@ -69,12 +70,12 @@ exports.debugSharedDriveAccess = onCall({
         pageSize: 5,
         fields: 'files(id,name,mimeType)'
       });
-      console.log('✅ Files list retrieved:', {
+      config.success('Files list retrieved:', {
         fileCount: filesList.data.files?.length || 0,
         files: filesList.data.files?.map(f => ({ name: f.name, type: f.mimeType })) || []
       });
     } catch (listError) {
-      console.error('❌ Error listing files:', listError.message);
+      config.error('Error listing files:', listError);
       return {
         success: false,
         error: `Cannot list files in Shared Drive: ${listError.message}`,
@@ -87,7 +88,7 @@ exports.debugSharedDriveAccess = onCall({
     }
     
     // Test 5: Try to create a test file
-    console.log('🔍 Test 5: Creating test file...');
+    config.info('Test 5: Creating test file...');
     try {
       const testFile = await drive.files.create({
         requestBody: {
@@ -145,4 +146,4 @@ exports.debugSharedDriveAccess = onCall({
       }
     };
   }
-}); 
+});

@@ -1,0 +1,4 @@
+schoolId,name,district,address,phone,principalEmail,adminName,adminEmail,adminPassword
+jepson-elementary,Jepson Elementary School,Jepson USD,123 Main St Jepson CA 95640,(555) 123-4567,principal@jepson-elem.edu,John Smith,admin@jepson-elem.edu,SecurePass123
+jepson-middle,Jepson Middle School,Jepson USD,456 Oak Ave Jepson CA 95640,(555) 234-5678,principal@jepson-middle.edu,Jane Doe,admin@jepson-middle.edu,SecurePass456
+jepson-high,Jepson High School,Jepson USD,789 Pine St Jepson CA 95640,(555) 345-6789,principal@jepson-high.edu,Bob Johnson,admin@jepson-high.edu,SecurePass789

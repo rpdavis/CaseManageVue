@@ -1,5 +1,6 @@
 const { onCall } = require("firebase-functions/v2/https");
 const { google } = require("googleapis");
+const config = require("./utils/config-helper");
 
 // ADC will pick up the function's service account automatically
 const auth = new google.auth.GoogleAuth({
@@ -10,19 +11,19 @@ const auth = new google.auth.GoogleAuth({
   ]
 });
 
-exports.setupSharedDrive = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.setupSharedDrive = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     const client = await auth.getClient();
     const drive = google.drive({ version: 'v3', auth: client });
     
     // Create Shared Drive
-    console.log('🔄 Creating Shared Drive...');
+    config.info('Creating Shared Drive...');
     const sharedDrive = await drive.drives.create({
       requestId: `shared-drive-${Date.now()}`,
       requestBody: {
-        name: 'CaseManageVue Templates',
+        name: config.getGoogleDriveConfig('sharedDriveName'),
         restrictions: {
           adminManagedRestrictions: true
         }
@@ -30,48 +31,48 @@ exports.setupSharedDrive = onCall({
     });
     
     const sharedDriveId = sharedDrive.data.id;
-    console.log(`✅ Created Shared Drive: ${sharedDriveId}`);
+    config.success(`Created Shared Drive: ${sharedDriveId}`);
     
     // Add service account as manager
-    console.log('🔄 Adding service account as manager...');
+    config.info('Adding service account as manager...');
     await drive.permissions.create({
       fileId: sharedDriveId,
       requestBody: {
         role: 'manager',
         type: 'user',
-        emailAddress: 'casemanagevue@casemangervue.iam.gserviceaccount.com'
+        emailAddress: config.getServiceAccountEmail()
       },
       supportsAllDrives: true
     });
     
-    console.log('✅ Added service account as manager');
+    config.success('Added service account as manager');
     
     // Create Templates folder
-    console.log('🔄 Creating Templates folder...');
+    config.info('Creating Templates folder...');
     const templatesFolder = await drive.files.create({
       requestBody: {
-        name: 'Templates',
+        name: config.getGoogleDriveConfig('templatesFolderName'),
         mimeType: 'application/vnd.google-apps.folder',
         parents: [sharedDriveId]
       },
       supportsAllDrives: true
     });
     
-    console.log(`✅ Created Templates folder: ${templatesFolder.data.id}`);
+    config.success(`Created Templates folder: ${templatesFolder.data.id}`);
     
     return {
       success: true,
       sharedDriveId: sharedDriveId,
-      sharedDriveName: 'CaseManageVue Templates',
+      sharedDriveName: config.getGoogleDriveConfig('sharedDriveName'),
       templatesFolderId: templatesFolder.data.id,
       message: 'Shared Drive setup complete!'
     };
     
   } catch (error) {
-    console.error('❌ Error setting up Shared Drive:', error);
+    config.error('Error setting up Shared Drive:', error);
     return {
       success: false,
       error: error.message
     };
   }
-}); 
+});

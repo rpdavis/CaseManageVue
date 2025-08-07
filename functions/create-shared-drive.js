@@ -2,12 +2,13 @@ const { onCall } = require("firebase-functions/v2/https");
 const { getFirestore } = require("firebase-admin/firestore");
 const { google } = require("googleapis");
 const { requireAuth, sanitizeString, validateRequired } = require("./teacherFeedback/helpers");
+const config = require("./utils/config-helper");
 
 const db = getFirestore();
 
-exports.createSharedDrive = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.createSharedDrive = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -20,7 +21,7 @@ exports.createSharedDrive = onCall({
     const sanitizedDriveName = sanitizeString(driveName, 100);
     
     // Check if user is school admin
-    const schoolDoc = await db.collection('schools').doc(schoolId).get();
+    const schoolDoc = await db.collection(config.getCollection("schools")).doc(schoolId).get();
     if (!schoolDoc.exists) {
       throw new Error('School not found');
     }
@@ -48,11 +49,11 @@ exports.createSharedDrive = onCall({
         "3. Click 'New' to create a new shared drive",
         "4. Name it: '" + sanitizedDriveName + "'",
         "5. Add the service account as a Manager:",
-        "   Email: casemanagevue@casemangervue.iam.gserviceaccount.com",
+        `   Email: ${config.getServiceAccountEmail()}`,
         "6. Copy the Shared Drive ID from the URL",
         "7. Use the 'Update Shared Drive ID' function to save it"
       ],
-      serviceAccountEmail: "casemanagevue@casemangervue.iam.gserviceaccount.com",
+      serviceAccountEmail: config.getServiceAccountEmail(),
       suggestedDriveName: sanitizedDriveName
     };
     
@@ -68,9 +69,9 @@ exports.createSharedDrive = onCall({
 });
 
 // Function to update Shared Drive ID after manual creation
-exports.updateSharedDriveId = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.updateSharedDriveId = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     requireAuth(request);
     
@@ -83,7 +84,7 @@ exports.updateSharedDriveId = onCall({
     const sanitizedDriveId = sanitizeString(sharedDriveId, 50);
     
     // Check if user is school admin
-    const schoolDoc = await db.collection('schools').doc(schoolId).get();
+    const schoolDoc = await db.collection(config.getCollection("schools")).doc(schoolId).get();
     if (!schoolDoc.exists) {
       throw new Error('School not found');
     }
@@ -142,4 +143,4 @@ exports.updateSharedDriveId = onCall({
       error: error.message
     };
   }
-}); 
+});

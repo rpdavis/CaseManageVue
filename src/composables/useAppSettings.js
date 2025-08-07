@@ -141,11 +141,10 @@ export function useAppSettings() {
       let isInternalOAuth = gmailScopeAdded
       
       try {
-        const response = await fetch('https://oauth2.googleapis.com/tokeninfo')
-        if (response.ok) {
-          const data = await response.json()
-          isWorkspace = data.hd && data.hd.includes('.')
-        }
+        // Skip OAuth validation for now to avoid authentication issues
+        // This can be re-enabled later when OAuth is properly configured
+        console.log('ℹ️ Skipping OAuth validation to avoid authentication issues');
+        isWorkspace = false;
       } catch (tokenError) {
         console.warn('Could not get detailed OAuth info:', tokenError)
       }

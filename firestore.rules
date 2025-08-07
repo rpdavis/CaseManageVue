@@ -161,6 +161,8 @@ service cloud.firestore {
              (isAdmin504() && 
               doc.app.studentData.plan == '504' &&
               request.resource.data.app.studentData.plan == '504') ||
+             // Sped chair can edit all students
+             isSpedChair() ||
              // Case managers can edit students on their caseload
              (isCaseManager() && doc.app.studentData.caseManagerId == uid());
     }

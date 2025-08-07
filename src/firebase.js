@@ -48,35 +48,14 @@ const googleProvider = new GoogleAuthProvider();
 // Function to check if we should add Gmail scope
 const checkAndAddGmailScope = async () => {
   try {
-    // Check if we're in a Google Workspace environment with internal OAuth
-    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?client_id=${firebaseConfig.appId.split(':')[1]}`, {
-      method: 'GET'
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      
-      // Check if this is internal OAuth (not public)
-      const isInternal = !data.error && (
-        data.aud && !data.aud.includes('apps.googleusercontent.com') ||
-        data.client_type === 'confidential'
-      );
-      
-      if (isInternal) {
-        googleProvider.addScope('https://www.googleapis.com/auth/gmail.compose');
-        console.log('✅ Internal OAuth detected - Gmail scope added');
-        return true;
-      } else {
-        console.log('ℹ️ Public OAuth detected - Gmail scope not added');
-        return false;
-      }
-    }
+    // Skip OAuth validation for now to avoid authentication issues
+    // This can be re-enabled later when OAuth is properly configured
+    console.log('ℹ️ Skipping OAuth validation to avoid authentication issues');
+    return false;
   } catch (error) {
     console.warn('⚠️ Could not determine OAuth type:', error);
+    return false;
   }
-  
-  // Default to not adding Gmail scope if we can't determine
-  return false;
 };
 
 // Check and configure Gmail scope on initialization

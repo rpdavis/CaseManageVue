@@ -1,13 +1,14 @@
 const { onCall } = require("firebase-functions/v2/https");
 const { getFirestore } = require("firebase-admin/firestore");
+const config = require("./utils/config-helper");
 
 const db = getFirestore();
 
-exports.testSchools = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.testSchools = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
-    const schoolsSnapshot = await db.collection('schools').get();
+    const schoolsSnapshot = await db.collection(config.getCollection("schools")).get();
     const schools = [];
     
     schoolsSnapshot.forEach(doc => {
@@ -24,10 +25,10 @@ exports.testSchools = onCall({
     };
     
   } catch (error) {
-    console.error('Error testing schools:', error);
+    config.error('Error testing schools:', error);
     return {
       success: false,
       error: error.message
     };
   }
-}); 
+});

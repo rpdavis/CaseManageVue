@@ -1,5 +1,6 @@
 const { onCall } = require("firebase-functions/v2/https");
 const { google } = require("googleapis");
+const config = require("./utils/config-helper");
 
 // ADC will pick up the function's service account automatically
 const auth = new google.auth.GoogleAuth({
@@ -10,9 +11,9 @@ const auth = new google.auth.GoogleAuth({
   ]
 });
 
-exports.testSharedDriveAccess = onCall({
-  region: "us-central1"
-}, async (request) => {
+exports.testSharedDriveAccess = onCall(
+  config.createFunctionOptions(),
+  async (request) => {
   try {
     const client = await auth.getClient();
     const drive = google.drive({ version: 'v3', auth: client });
@@ -28,7 +29,7 @@ exports.testSharedDriveAccess = onCall({
       };
     }
     
-    console.log(`Testing access to Shared Drive: ${sharedDriveId}`);
+    config.info(`Testing access to Shared Drive: ${sharedDriveId}`);
     
     // Try to list files in the Shared Drive
     const files = await drive.files.list({
@@ -38,7 +39,7 @@ exports.testSharedDriveAccess = onCall({
       fields: 'files(id,name,mimeType)'
     });
     
-    console.log('✅ Successfully listed files in Shared Drive');
+    config.success('Successfully listed files in Shared Drive');
     
     // Try to create a test file
     const testFile = await drive.files.create({
@@ -51,7 +52,7 @@ exports.testSharedDriveAccess = onCall({
       fields: 'id,name'
     });
     
-    console.log(`✅ Successfully created test file: ${testFile.data.id}`);
+    config.success(`Successfully created test file: ${testFile.data.id}`);
     
     // Clean up the test file
     await drive.files.delete({
@@ -59,7 +60,7 @@ exports.testSharedDriveAccess = onCall({
       supportsAllDrives: true
     });
     
-    console.log('✅ Successfully deleted test file');
+    config.success('Successfully deleted test file');
     
     return {
       success: true,
@@ -69,11 +70,11 @@ exports.testSharedDriveAccess = onCall({
     };
     
   } catch (error) {
-    console.error('❌ Error testing Shared Drive access:', error);
+    config.error('Error testing Shared Drive access:', error);
     return {
       success: false,
       error: error.message,
       details: error.response?.data || null
     };
   }
-}); 
+});

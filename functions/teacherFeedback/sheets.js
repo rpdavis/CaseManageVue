@@ -5,6 +5,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore } = require("firebase-admin/firestore");
 const { google } = require("googleapis");
 const { createSheetsClient, createDriveClient, getDriveConfig, isUsingSharedDrive } = require("./helpers");
+const config = require("../utils/config-helper");
 
 const db = getFirestore();
 
@@ -19,7 +20,7 @@ async function checkDriveQuota(drive, userEmail) {
     const quota = about.data.storageQuota;
     const user = about.data.user;
     
-    console.log(`📊 Drive quota for ${userEmail}:`, {
+    config.info(`Drive quota for ${userEmail}:`, {
       total: quota.limit,
       used: quota.usage,
       available: quota.limit - quota.usage,
@@ -45,7 +46,7 @@ async function checkDriveQuota(drive, userEmail) {
     };
     
   } catch (error) {
-    console.error('Error checking drive quota:', error);
+    config.error('Error checking drive quota:', error);
     throw new HttpsError('internal', 'Failed to check drive storage: ' + error.message);
   }
 }
@@ -69,7 +70,7 @@ async function checkServiceAccountStorage() {
     const available = Math.max(0, total - used);
     const usagePercent = total > 0 ? Math.round((used / total) * 100) : 0;
     
-    console.log(`📊 Service Account Drive Storage:`, {
+    config.info(`Service Account Drive Storage:`, {
       user: user.emailAddress,
       total: total,
       used: used,
@@ -89,7 +90,7 @@ async function checkServiceAccountStorage() {
     };
     
   } catch (error) {
-    console.error('Error checking service account storage:', error);
+    config.error('Error checking service account storage:', error);
     throw new HttpsError('internal', 'Failed to check service account storage: ' + error.message);
   }
 }
@@ -101,7 +102,7 @@ async function createGoogleSheet(title, description, userEmail, userName, school
     const auth = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI || 'https://casemangervue.web.app'
+      process.env.GOOGLE_REDIRECT_URI || config.getAppUrl()
     );
     
     // For now, we'll use the service account but create files in the user's shared folder
@@ -163,7 +164,7 @@ async function createGoogleSheet(title, description, userEmail, userName, school
     if (error.message.includes('storage quota has been exceeded')) {
       throw new HttpsError('resource-exhausted', 'Service account storage quota exceeded (0 bytes available). This is a known issue. The service account needs to be configured with Google Drive storage access. For now, please use the "Check Service Account Storage" button to verify this issue.');
     } else if (error.message.includes('permission') || error.message.includes('access') || error.message.includes('caller does not have permission')) {
-      throw new HttpsError('permission-denied', 'Cannot access your Google Drive. Please share the folder with: casemangervue@casemangervue.iam.gserviceaccount.com with Editor permissions.');
+      throw new HttpsError('permission-denied', `Cannot access your Google Drive. Please share the folder with: ${config.getServiceAccountEmail()} with Editor permissions.`);
     } else {
       throw new HttpsError('internal', 'Failed to create Google Sheet: ' + error.message);
     }

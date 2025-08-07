@@ -1,12 +1,11 @@
 /* eslint-disable */
-// functions/index.js
+// functions/index-refactored.js
+// Refactored main functions file with improved organization
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
-// Firebase Functions v2
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const functions = require("firebase-functions"); // Keep for v1 compatibility if needed
 const { onRequest } = require('firebase-functions/v2/https');
 
 // Firebase Admin
@@ -17,17 +16,29 @@ const { getStorage } = require("firebase-admin/storage");
 
 // Utilities
 const axios = require("axios");
-const { google } = require("googleapis");
+const express = require("express");
+const cors = require("cors");
 
 // ─── INITIALIZATION ───────────────────────────────────────────────────────────
 initializeApp();
 const db = getFirestore();
 const adminAuth = getAuth();
 
-// Import token removal functions
-const { removeDownloadTokens, removeDownloadTokensOnFinalize, removeDownloadTokensOnMetadata } = require("./remove-tokens");
+// ─── SHARED UTILITIES ────────────────────────────────────────────────────────
+const {
+  requireAuth,
+  requireRole,
+  sanitizeString,
+  validateEmail,
+  validateRequired,
+  checkSecurityThreats
+} = require("./utils/shared");
 
-// Import teacher feedback functions
+// ─── CONFIGURATION ───────────────────────────────────────────────────────────
+const config = require("./utils/config-helper");
+
+// ─── MODULAR FUNCTION IMPORTS ────────────────────────────────────────────────
+const { removeDownloadTokens, removeDownloadTokensOnFinalize, removeDownloadTokensOnMetadata } = require("./remove-tokens");
 const teacherFeedbackFunctions = require("./teacherFeedback/index");
 
 // Import test functions
@@ -45,182 +56,11 @@ const { createSharedDrive, updateSharedDriveId } = require("./create-shared-driv
 // Import debug function
 const { debugSharedDriveAccess } = require("./debug-shared-drive-access");
 
-
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const VALID_ROLES = [
-  "admin",
-  "school_admin",
-  "staff_view", 
-  "staff_edit",
-  "admin_504",
-  "sped_chair",
-  "case_manager",
-  "teacher",
-  "service_provider",
-  "paraeducator",
-  // Legacy role names for backward compatibility during migration
-  "administrator",
-  "administrator_504_CM"
-];
-
-const ADMIN_ROLES = [
-  "admin",
-  "school_admin",
-  "admin_504",
-  "sped_chair",
-  // Legacy role names for backward compatibility during migration
-  "administrator",
-  "administrator_504_CM"
-];
-
-// ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
-function requireAuth(request) {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required");
-  }
-}
-
-
-
-function requireRole(request, allowedRoles) {
-  requireAuth(request);
-  if (!allowedRoles.includes(request.auth.token.role)) {
-    throw new HttpsError("permission-denied", "Insufficient permissions");
-  }
-}
-
-// Input validation and sanitization
-function sanitizeString(input, maxLength = 255) {
-  if (typeof input !== 'string') {
-    return '';
-  }
-  
-  return input
-    .trim()
-    .replace(/\0/g, '') // Remove null bytes
-    .replace(/[<>'"&]/g, '') // Remove potentially dangerous characters
-    .substring(0, maxLength);
-}
-
-function validateEmail(email) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-function validateRequired(value, fieldName) {
-  if (!value || (typeof value === 'string' && value.trim() === '')) {
-    throw new HttpsError("invalid-argument", `${fieldName} is required`);
-  }
-}
-
-function checkSecurityThreats(input) {
-  if (typeof input !== 'string') return;
-  
-  const threats = [];
-  
-  // Check for script injection
-  if (/<script|javascript:|vbscript:|onload=|onerror=/i.test(input)) {
-    threats.push('Script injection attempt');
-  }
-  
-  // Check for SQL injection patterns
-  if (/(\bunion\b|\bselect\b|\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b).*(\bfrom\b|\binto\b|\bwhere\b)/i.test(input)) {
-    threats.push('SQL injection pattern');
-  }
-  
-  // Check for path traversal
-  if (/\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e%5c/i.test(input)) {
-    threats.push('Path traversal attempt');
-  }
-  
-  if (threats.length > 0) {
-    throw new HttpsError("invalid-argument", `Security threat detected: ${threats.join(', ')}`);
-  }
-}
-
-// Extract form ID from Google Form URL
-function extractFormId(url) {
-  const match = url.match(/\/forms\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : null;
-}
-
-// Google Auth Helper
-const getGoogleAuth = () => {
-  const credentials = process.env.GOOGLE_KEY ? 
-    JSON.parse(process.env.GOOGLE_KEY) : 
-    require("./service-account.json");
-  
-  return new google.auth.GoogleAuth({
-    credentials,
-    scopes: [
-      "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/documents",
-      "https://www.googleapis.com/auth/drive",
-      "https://www.googleapis.com/auth/forms.responses.readonly"
-    ],
-  });
-};
-
-
-
-
 // ─── USER MANAGEMENT FUNCTIONS ────────────────────────────────────────────────
-exports.syncUserClaims = onDocumentWritten({
-  document: "users/{uid}",
-  region: "us-central1"
-}, async (event) => {
-  const uid = event.params.uid;
-  const afterData = event.data?.after?.data();
-
-  try {
-    // If document was deleted, only remove claims (don't delete the user)
-    if (!event.data?.after?.exists) {
-      try {
-        const userRec = await adminAuth.getUser(uid);
-        await adminAuth.setCustomUserClaims(userRec.uid, null);
-        console.log(`✅ Removed claims for UID: ${uid}`);
-      } catch (error) {
-        if (error.code === 'auth/user-not-found') {
-          console.log(`User ${uid} not found in Auth`);
-        } else {
-          console.error(`❌ Error removing claims: ${uid}`, error);
-        }
-      }
-      return;
-    }
-
-    const { role, name, email: firestoreEmail } = afterData;
-    if (!role) {
-      console.log(`ℹ️ No role in document; skipping sync`);
-      return;
-    }
-
-    const userRec = await adminAuth.getUser(uid);
-    await adminAuth.setCustomUserClaims(userRec.uid, { role });
-    console.log(`✅ Updated claims for ${uid}: ${role}`);
-
-    await db.collection("usersByUID").doc(uid).set({
-      uid,
-      email: firestoreEmail || userRec.email,
-      name: name || userRec.displayName || "",
-      role
-    }, { merge: true });
-    
-  } catch (err) {
-    if (err.code === "auth/user-not-found") {
-      console.log(`ℹ️ Auth user not found for UID ${uid}`);
-    } else {
-      console.error(`❌ syncUserClaims error:`, err);
-    }
-  }
-});
-
-exports.addUserWithRole = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
-  requireRole(request, ["admin"]);
+exports.addUserWithRole = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getSuperAdminRoles());
 
   const { name, email, role, provider, aeriesId } = request.data;
   
@@ -249,8 +89,8 @@ exports.addUserWithRole = onCall({
   }
   
   // Validate role
-  if (!VALID_ROLES.includes(sanitizedRole)) {
-    throw new HttpsError("invalid-argument", `Invalid role. Valid roles: ${VALID_ROLES.join(", ")}`);
+  if (!config.isValidRole(sanitizedRole)) {
+    throw new HttpsError("invalid-argument", `Invalid role. Valid roles: ${config.getValidRoles().join(", ")}`);
   }
 
   try {
@@ -271,7 +111,7 @@ exports.addUserWithRole = onCall({
       ...(sanitizedAeriesId && { aeriesId: sanitizedAeriesId })
     };
 
-    await db.collection("users").doc(userRecord.uid).set(userData);
+    await db.collection(config.getCollection("users")).doc(userRecord.uid).set(userData);
 
     return { 
       success: true,
@@ -287,11 +127,10 @@ exports.addUserWithRole = onCall({
   }
 });
 
-// Add after syncUserClaims function
-exports.deleteUserAuth = onCall({
-  region: "us-central1"
-}, async (request) => {
-  requireRole(request, ["admin"]);
+exports.deleteUserAuth = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getSuperAdminRoles());
 
   const { uid } = request.data;
   validateRequired(uid, "User ID");
@@ -303,9 +142,9 @@ exports.deleteUserAuth = onCall({
     
     // Also delete from usersByUID collection if it exists
     try {
-      await db.collection("usersByUID").doc(uid).delete();
+      await db.collection(config.getCollection("usersByUID")).doc(uid).delete();
     } catch (error) {
-      console.log(`Failed to delete from usersByUID: ${error.message}`);
+      config.warning(`Failed to delete from usersByUID: ${error.message}`);
     }
     
     return { 
@@ -323,11 +162,10 @@ exports.deleteUserAuth = onCall({
   }
 });
 
-// Add after deleteUserAuth function
-exports.deleteAllUsers = onCall({
-  region: "us-central1"
-}, async (request) => {
-  requireRole(request, ["admin"]);
+exports.deleteAllUsers = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getSuperAdminRoles());
 
   try {
     // Get all users from Firebase Auth
@@ -341,9 +179,9 @@ exports.deleteAllUsers = onCall({
         
         // Also delete from usersByUID if it exists
         try {
-          await db.collection("usersByUID").doc(userRecord.uid).delete();
+          await db.collection(config.getCollection("usersByUID")).doc(userRecord.uid).delete();
         } catch (error) {
-          console.log(`Failed to delete from usersByUID: ${userRecord.uid} - ${error.message}`);
+          config.warning(`Failed to delete from usersByUID: ${error.message}`);
         }
       } catch (error) {
         console.error(`❌ Failed to delete user ${userRecord.uid}:`, error);
@@ -357,56 +195,64 @@ exports.deleteAllUsers = onCall({
       message: `Deleted ${listUsersResult.users.length} users from Firebase Auth`
     };
   } catch (error) {
-    throw new HttpsError("internal", `Failed to delete users: ${error.message}`);
+    throw new HttpsError("internal", `Failed to delete all users: ${error.message}`);
   }
 });
 
-// Add Firestore trigger to delete Auth user when Firestore user is deleted
-exports.cleanupDeletedUser = onDocumentWritten({
-  document: "users/{userId}",
-  region: "us-central1"
-}, async (event) => {
-  // Only run on delete
-  if (event.data.after?.exists) return;
+// Background triggered function for syncing user claims
+exports.syncUserClaims = onDocumentWritten(
+  config.createDocumentTriggerOptions(config.getCollection("users") + "/{uid}"),
+  async (event) => {
+  const uid = event.params.uid;
+  const afterData = event.data?.after?.data();
 
-  const userId = event.params.userId;
-  console.log(`🗑️ User document deleted from Firestore, cleaning up: ${userId}`);
-  
   try {
-    // Delete from Auth
-    await adminAuth.deleteUser(userId);
-    console.log(`✅ Deleted user from Auth after Firestore delete: ${userId}`);
-    
-    // Delete from usersByUID if it exists
-    try {
-      await db.collection("usersByUID").doc(userId).delete();
-      console.log(`✅ Deleted user from usersByUID: ${userId}`);
-    } catch (error) {
-      if (error.code === 'not-found') {
-        console.log(`User ${userId} not found in usersByUID`);
-      } else {
-        console.error(`❌ Failed to delete from usersByUID: ${error.message}`);
+    // If document was deleted, only remove claims (don't delete the user)
+    if (!event.data?.after?.exists) {
+      try {
+        const userRec = await adminAuth.getUser(uid);
+        await adminAuth.setCustomUserClaims(userRec.uid, null);
+        console.log(`✅ Removed claims for UID: ${uid}`);
+      } catch (error) {
+        if (error.code === 'auth/user-not-found') {
+          console.log(`User ${uid} not found in Auth`);
+        } else {
+          console.error(`❌ Error removing claims: ${uid}`, error);
+        }
+      }
+      return;
+    }
+
+    // If document exists, sync claims based on user data
+    if (afterData && afterData.role) {
+      try {
+        const userRec = await adminAuth.getUser(uid);
+        await adminAuth.setCustomUserClaims(userRec.uid, { role: afterData.role });
+        console.log(`✅ Synced claims for UID: ${uid}, Role: ${afterData.role}`);
+      } catch (error) {
+        console.error(`❌ Error syncing claims: ${uid}`, error);
       }
     }
-  } catch (error) {
-    if (error.code === 'auth/user-not-found') {
-      console.log(`User ${userId} not found in Auth - already deleted`);
-    } else {
-      console.error(`❌ Failed to delete user from Auth: ${userId}`, error);
-    }
+  } catch (err) {
+    console.error(`❌ syncUserClaims error:`, err);
   }
 });
 
 // ─── AERIES API FUNCTIONS ────────────────────────────────────────────────────
-exports.getAeriesToken = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
-  requireRole(request, ADMIN_ROLES);
+exports.getAeriesToken = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getAdminRoles());
 
   const { baseUrl, clientId, clientSecret } = request.data;
-  if (!baseUrl || !clientId || !clientSecret) {
-    throw new HttpsError("invalid-argument", "Missing required parameters");
+  
+  // Validation
+  validateRequired(baseUrl, "Base URL");
+  validateRequired(clientId, "Client ID");
+  validateRequired(clientSecret, "Client Secret");
+  
+  if (checkSecurityThreats(baseUrl) || checkSecurityThreats(clientId) || checkSecurityThreats(clientSecret)) {
+    throw new HttpsError("invalid-argument", "Security threat detected");
   }
 
   try {
@@ -433,30 +279,20 @@ exports.getAeriesToken = onCall({
 });
 
 // ─── TEACHER FEEDBACK FUNCTIONS ──────────────────────────────────────────────
-// Imported from modular teacherFeedback/index.js
-// Remove unused teacher feedback function exports
-// exports.createCaseManagerFeedbackSystem = teacherFeedbackFunctions.createCaseManagerFeedbackSystem;
 exports.createFeedbackFormSheet = teacherFeedbackFunctions.createFeedbackFormSheet;
 exports.createFeedbackFormSheetWithUserAuth = teacherFeedbackFunctions.createFeedbackFormSheetWithUserAuth;
-// exports.sendTeacherFeedbackForm = teacherFeedbackFunctions.sendTeacherFeedbackForm; // No longer used
-// exports.getCaseManagerFeedbackSystem = teacherFeedbackFunctions.getCaseManagerFeedbackSystem;
-// exports.syncFormResponses = teacherFeedbackFunctions.syncFormResponses;
-// exports.autoSyncFormResponses = teacherFeedbackFunctions.autoSyncFormResponses;
-// exports.generateFeedbackDocument = teacherFeedbackFunctions.generateFeedbackDocument;
 exports.checkServiceAccountStorage = teacherFeedbackFunctions.checkServiceAccountStorage;
-// exports.updateCaseManagerDocument = teacherFeedbackFunctions.updateCaseManagerDocument;
-// exports.getCaseManagerResources = teacherFeedbackFunctions.getCaseManagerResources;
 
-
-exports.getStudentFeedback = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
+exports.getStudentFeedback = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
   requireAuth(request);
   
   const { studentId } = request.data;
-  if (!studentId) {
-    throw new HttpsError("invalid-argument", "Student ID required");
+  validateRequired(studentId, "Student ID");
+  
+  if (checkSecurityThreats(studentId)) {
+    throw new HttpsError("invalid-argument", "Security threat detected");
   }
 
   try {
@@ -475,11 +311,65 @@ exports.getStudentFeedback = onCall({
   }
 });
 
-exports.healthCheck = onCall({
-  region: "us-central1"
-}, async (request) => {
+// ─── SECURE FILE ACCESS FUNCTIONS ────────────────────────────────────────────
+exports.getStudentFileUrl = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+  requireAuth(request);
+  
+  const { fileName } = request.data;
+  validateRequired(fileName, "File name");
+  
+  if (checkSecurityThreats(fileName)) {
+    throw new HttpsError("invalid-argument", "Security threat detected");
+  }
+
   try {
-    // Simple response to verify function is working
+    const bucket = getStorage().bucket();
+    const filePath = config.getStoragePathWithParams('studentsPath', { fileName });
+    const file = bucket.file(filePath);
+    
+    const [url] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + config.getSignedUrlExpiry(),
+    });
+    
+    return { url };
+  } catch (error) {
+    console.error("Get file URL error:", error);
+    throw new HttpsError("internal", "Failed to generate file URL");
+  }
+});
+
+
+
+
+
+// ─── SCHOOL MANAGEMENT FUNCTIONS ──────────────────────────────────────────────
+exports.getOrCreateSchool = teacherFeedbackFunctions.getOrCreateSchool;
+exports.addSchoolAdmin = teacherFeedbackFunctions.addSchoolAdmin;
+exports.getSchoolTemplates = teacherFeedbackFunctions.getSchoolTemplates;
+exports.createSchoolTemplate = teacherFeedbackFunctions.createSchoolTemplate;
+exports.getUserSchool = teacherFeedbackFunctions.getUserSchool;
+
+// ─── TESTING FUNCTIONS ────────────────────────────────────────────────────────
+exports.testSchools = testSchools;
+
+// ─── SHARED DRIVE FUNCTIONS ──────────────────────────────────────────────────
+exports.setupSharedDrive = setupSharedDrive;
+exports.testSharedDriveAccess = testSharedDriveAccess;
+exports.createSharedDrive = createSharedDrive;
+exports.updateSharedDriveId = updateSharedDriveId;
+exports.debugSharedDriveAccess = debugSharedDriveAccess;
+
+
+
+
+// ─── UTILITY FUNCTIONS ────────────────────────────────────────────────────────
+exports.healthCheck = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+  try {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -491,204 +381,90 @@ exports.healthCheck = onCall({
   }
 });
 
-// ─── SECURE FILE ACCESS FUNCTIONS ────────────────────────────────────────────
-exports.getStudentFileUrl = onCall({
-  region: "us-central1",
-  maxInstances: 10
-}, async (request) => {
-  requireAuth(request);
-  
-  const { studentId, fileName } = request.data;
-  
-  // Validate inputs
-  validateRequired(studentId, "Student ID");
-  validateRequired(fileName, "File name");
-  
-  // Sanitize inputs
-  const sanitizedStudentId = sanitizeString(studentId, 50);
-  const sanitizedFileName = sanitizeString(fileName, 100);
-  
-  // Security checks
-  checkSecurityThreats(sanitizedStudentId);
-  checkSecurityThreats(sanitizedFileName);
-  
-  try {
-    // Check if user has access to this student
-    const studentDoc = await db.collection("students").doc(sanitizedStudentId).get();
-    if (!studentDoc.exists) {
-      throw new HttpsError("not-found", "Student not found");
-    }
-    
-    const studentData = studentDoc.data();
-    const staffIds = studentData.app?.staffIds || [];
-    const caseManagerId = studentData.app?.studentData?.caseManagerId;
-    
-    // Authorization check
-    const userRole = request.auth.token.role;
-    const userId = request.auth.uid;
-    
-    const hasAccess = (
-      // Super admins can access any file
-      userRole === 'admin' || userRole === 'sped_chair' ||
-      // School admins can access all files
-      userRole === 'school_admin' ||
-      // Staff editors can access all files
-      userRole === 'staff_edit' ||
-      // 504 coordinators can access all files (both old and new names)
-      userRole === 'administrator_504_CM' || userRole === 'admin_504' ||
-      // Staff viewers can access all files (both old and new names)
-      userRole === 'administrator' || userRole === 'staff_view' ||
-      // User is in the student's staff list
-      staffIds.includes(userId) ||
-      // Case manager can access their own student's files
-      (userRole === 'case_manager' && userId === caseManagerId)
-    );
-    
-    if (!hasAccess) {
-      throw new HttpsError("permission-denied", "You don't have access to this student's files");
-    }
-    
-    // Generate signed URL (expires in 5 minutes)
-    const bucket = getStorage().bucket();
-    
-    // Check both possible file paths (students folder first for consistency)
-    let filePath = `students/${sanitizedStudentId}/${sanitizedFileName}`;
-    let file = bucket.file(filePath);
-    
-    // Check if file exists in students path
-    let [exists] = await file.exists();
-    
-    // If not found, check encrypted-pdfs path (for backward compatibility)
-    if (!exists) {
-      filePath = `encrypted-pdfs/${sanitizedStudentId}/${sanitizedFileName}`;
-      file = bucket.file(filePath);
-      [exists] = await file.exists();
-    }
-    
-    if (!exists) {
-      throw new HttpsError("not-found", "File not found");
-    }
-    
-    // Generate signed URL without download tokens
-    const [signedUrl] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 5 * 60 * 1000,  // 5 minutes
-      version: 'v4',  // Use v4 signed URLs for better security
-      responseDisposition: 'inline',  // Open in browser instead of downloading
-      responseType: 'application/pdf'  // Set content type for PDF
-    });
-    
-    console.log(`✅ Generated signed URL for ${filePath} (user: ${userId})`);
-    
-    return { url: signedUrl };
-    
-  } catch (error) {
-    console.error(`❌ Error generating signed URL:`, error);
-    if (error instanceof HttpsError) {
-      throw error;
-    }
-    throw new HttpsError("internal", `Failed to generate file URL: ${error.message}`);
-  }
-});
-
-// Export token removal functions
+// ─── TOKEN REMOVAL FUNCTIONS ──────────────────────────────────────────────────
 exports.removeDownloadTokens = removeDownloadTokens;
 exports.removeDownloadTokensOnFinalize = removeDownloadTokensOnFinalize;
 exports.removeDownloadTokensOnMetadata = removeDownloadTokensOnMetadata;
 
-// ─── SECURE FILE PROXY ─────────────────────────────────────────────────────
-const express = require('express');
-const cors = require('cors');
-const downloadApp = express();
-downloadApp.use(cors({ origin: true }));
-downloadApp.use(express.json());
+// ─── LEGACY FUNCTIONS (for backward compatibility) ───────────────────────────
+exports.cleanupDeletedUser = onDocumentWritten(
+  config.createDocumentTriggerOptions(config.getCollection("users") + "/{userId}"),
+  async (event) => {
+  // Only run on delete
+  if (event.data.after?.exists) return;
 
-// Authentication middleware
-downloadApp.use(async (req, res, next) => {
-  const authHeader = req.get('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return res.status(401).send('Unauthorized');
-  }
-  const idToken = authHeader.split('Bearer ')[1];
+  const userId = event.params.userId;
+  console.log(`🗑️ User document deleted from Firestore, cleaning up: ${userId}`);
+  
   try {
-    req.user = await getAuth().verifyIdToken(idToken);
-    next();
+    // Delete from Auth
+    await adminAuth.deleteUser(userId);
+    console.log(`✅ Deleted user from Auth after Firestore delete: ${userId}`);
+    
+    // Delete from usersByUID if it exists
+    try {
+      await db.collection(config.getCollection("usersByUID")).doc(userId).delete();
+      config.success(`Deleted user from usersByUID: ${userId}`);
+    } catch (error) {
+      if (error.code === 'not-found') {
+        config.info(`User ${userId} not found in usersByUID`);
+      } else {
+        config.error(`Failed to delete from usersByUID: ${error.message}`, error);
+      }
+    }
   } catch (error) {
-    return res.status(401).send('Unauthorized');
+    if (error.code === 'auth/user-not-found') {
+      console.log(`User ${userId} not found in Auth - already deleted`);
+    } else {
+      console.error(`❌ Failed to delete user from Auth: ${userId}`, error);
+    }
   }
 });
 
-// File download endpoint
-// URL format: /downloadStudentFile?studentId=ID&fileName=filename.pdf
-downloadApp.get('/downloadStudentFile', async (req, res) => {
-  const { studentId, fileName } = req.query;
-  if (!studentId || !fileName) {
-    return res.status(400).send('studentId and fileName required');
-  }
-  const { role, uid } = req.user;
-  // Authorization check
-  const docSnap = await db.collection('students').doc(studentId).get();
-  if (!docSnap.exists) {
-    return res.status(404).send('Student not found');
-  }
-  const data = docSnap.data();
-  const staffIds = data.app?.staffIds || [];
-  const caseManagerId = data.app?.studentData?.caseManagerId;
-  const allowed = (
-    role === 'admin' || role === 'sped_chair' || 
-    role === 'school_admin' || role === 'staff_edit' ||
-    role === 'administrator_504_CM' || role === 'admin_504' ||
-    role === 'administrator' || role === 'staff_view' ||
-    staffIds.includes(uid) || (role === 'case_manager' && uid === caseManagerId)
-  );
-  if (!allowed) {
-    return res.status(403).send('Forbidden');
-  }
-  // Stream file from private bucket
-  const bucket = getStorage().bucket();
+
+
+exports.migrateUserRoles = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getAdminRoles());
   
-  // Check both possible file paths (students folder first for consistency)
-  let filePath = `students/${studentId}/${fileName}`;
-  let file = bucket.file(filePath);
-  
-  // Check if file exists in students path
-  let [exists] = await file.exists();
-  
-  // If not found, check encrypted-pdfs path (for backward compatibility)
-  if (!exists) {
-    filePath = `encrypted-pdfs/${studentId}/${fileName}`;
-    file = bucket.file(filePath);
-    [exists] = await file.exists();
+  try {
+    const listUsersResult = await adminAuth.listUsers();
+    const migrationResults = [];
+    
+    for (const user of listUsersResult.users) {
+      if (user.customClaims?.role) {
+        const oldRole = user.customClaims.role;
+        let newRole = oldRole;
+        
+        // Map legacy roles to new roles
+        if (oldRole === "administrator") newRole = "admin";
+        if (oldRole === "administrator_504_CM") newRole = "admin_504";
+        
+        if (oldRole !== newRole) {
+          await adminAuth.setCustomUserClaims(user.uid, { role: newRole });
+          migrationResults.push({
+            uid: user.uid,
+            email: user.email,
+            oldRole,
+            newRole
+          });
+        }
+      }
+    }
+    
+    return { migrations: migrationResults };
+  } catch (error) {
+    console.error("Migrate roles error:", error);
+    throw new HttpsError("internal", "Failed to migrate user roles");
   }
-  
-  if (!exists) {
-    return res.status(404).send('File not found');
-  }
-  
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
-  file.createReadStream().pipe(res).on('error', err => {
-    console.error('Stream error:', err);
-    res.status(500).end();
-  });
 });
 
-// HTTPS function proxy for secure file streaming
-exports.downloadStudentFile = onRequest(
-  { region: 'us-central1', allowUnauthenticated: false },
-  downloadApp
-);
-
-// ─── STUDENT STAFF IDS MAINTENANCE ───────────────────────────────────────────
-/**
- * Cloud Function to maintain staffIds array on student documents
- * Triggers on any write to students/{studentId} and computes the staffIds array
- * based on case manager, schedule teachers, and service providers
- */
-exports.updateStudentStaffIds = onDocumentWritten({
-  document: "students/{studentId}",
-  region: "us-central1"
-}, async (event) => {
+// ─── STUDENT DATA FUNCTIONS ──────────────────────────────────────────────────
+// Background triggered function for updating student staff IDs
+exports.updateStudentStaffIds = onDocumentWritten(
+  config.createDocumentTriggerOptions(config.getCollection("students") + "/{studentId}"),
+  async (event) => {
   const studentId = event.params.studentId;
   const beforeData = event.data?.before?.data();
   const afterData = event.data?.after?.data();
@@ -736,46 +512,28 @@ exports.updateStudentStaffIds = onDocumentWritten({
   Object.entries(providers).forEach(([providerType, providerId]) => {
     if (providerId) {
       staffIds.add(providerId);
-      console.log(`Added ${providerType} provider: ${providerId}`);
+      console.log(`Added provider ${providerType}: ${providerId}`);
     }
   });
   
-  // Convert Set to array
-  const staffIdsArray = Array.from(staffIds).sort();
+  // Convert Set to Array and update if different
+  const newStaffIds = Array.from(staffIds);
   
-  // Check if staffIds actually changed
-  const existingSorted = [...existingStaffIds].sort();
-  const hasChanged = JSON.stringify(existingSorted) !== JSON.stringify(staffIdsArray);
-  
-  if (!hasChanged) {
-    console.log(`No changes to staffIds for student ${studentId}, skipping update`);
-    return null;
-  }
-  
-  console.log(`Updating student ${studentId} with ${staffIdsArray.length} staff members`);
-  
-  try {
-    await db
-      .collection('students')
-      .doc(studentId)
-      .update({
-        'app.staffIds': staffIdsArray,
-        'app.lastStaffIdsUpdate': FieldValue.serverTimestamp()
-      });
-    
-    console.log(`Successfully updated staffIds for student ${studentId}`);
-    return { success: true, staffCount: staffIdsArray.length };
-  } catch (error) {
-    console.error(`Error updating staffIds for student ${studentId}:`, error);
-    throw error;
+  if (JSON.stringify(newStaffIds.sort()) !== JSON.stringify(existingStaffIds.sort())) {
+    await db.collection("students").doc(studentId).update({
+      "app.staffIds": newStaffIds,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    console.log(`✅ Updated staffIds for student ${studentId}:`, newStaffIds);
+  } else {
+    console.log(`ℹ️ No staffIds update needed for student ${studentId}`);
   }
 });
 
-// Cloud Function: Sync paraeducator studentIds when a student document changes
-exports.syncParaeducatorStudentAssignments = onDocumentWritten({
-  document: 'students/{studentId}',
-  region: 'us-central1'
-}, async (event) => {
+// Background triggered function for syncing paraeducator assignments
+exports.syncParaeducatorStudentAssignments = onDocumentWritten(
+  config.createDocumentTriggerOptions(config.getCollection("students") + "/{studentId}"),
+  async (event) => {
   const studentId = event.params.studentId;
   const afterData = event.data.after?.data();
   const schedule = afterData?.app?.schedule?.periods || {};
@@ -815,11 +573,10 @@ exports.syncParaeducatorStudentAssignments = onDocumentWritten({
   }
 });
 
-// Cloud Function: Rebuild paraeducator studentIds when an aideSchedules document changes
-exports.rebuildParaeducatorStudentIds = onDocumentWritten({
-  document: 'aideSchedules/{aideId}',
-  region: 'us-central1'
-}, async (event) => {
+// Background triggered function for rebuilding paraeducator student IDs
+exports.rebuildParaeducatorStudentIds = onDocumentWritten(
+  config.createDocumentTriggerOptions(config.getCollection("aideSchedules") + "/{aideId}"),
+  async (event) => {
   const aideId = event.params.aideId;
   const data = event.data.after?.data() || {};
   const direct = Array.isArray(data.directAssignment)
@@ -829,7 +586,7 @@ exports.rebuildParaeducatorStudentIds = onDocumentWritten({
   const accessible = new Set(direct.filter(Boolean));
 
   // Fetch all students (server-side)
-  const studentsSnap = await db.collection('students').get();
+  const studentsSnap = await db.collection(config.getCollection("students")).get();
   for (const sDoc of studentsSnap.docs) {
     const student = { id: sDoc.id, ...sDoc.data() };
     const plan = student.app?.studentData?.plan;
@@ -846,106 +603,193 @@ exports.rebuildParaeducatorStudentIds = onDocumentWritten({
     }
   }
 
-  const docRef = db.doc(`aideSchedules/${aideId}`);
+  const docRef = db.doc(`${config.getCollection("aideSchedules")}/${aideId}`);
   await docRef.update({ studentIds: Array.from(accessible) });
 });
 
-// Test function to check schools collection
-exports.testSchools = testSchools;
-
-// Setup function for Shared Drive
-exports.setupSharedDrive = setupSharedDrive;
-
-// Test function for Shared Drive access
-exports.testSharedDriveAccess = testSharedDriveAccess;
-
-// Shared Drive management functions
-exports.createSharedDrive = createSharedDrive;
-exports.updateSharedDriveId = updateSharedDriveId;
-
-// Debug function for Shared Drive access
-exports.debugSharedDriveAccess = debugSharedDriveAccess;
-
-// Export all teacher feedback functions
-Object.assign(exports, teacherFeedbackFunctions);
 
 
+// HTTP function for downloading student files
+const downloadApp = express();
+downloadApp.use(cors({ origin: true }));
+downloadApp.use(express.json());
 
-// ─── ROLE MIGRATION FUNCTION ─────────────────────────────────────────────────
-// Role migration function to update users from old role names to new ones
-exports.migrateUserRoles = onCall({
-  region: "us-central1"
-}, async (request) => {
-  requireRole(request, ["admin"]);
-
-  const { dryRun = true } = request.data;
-
+// Authentication middleware
+downloadApp.use(async (req, res, next) => {
+  const authHeader = req.get('Authorization') || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).send('Unauthorized');
+  }
+  const idToken = authHeader.split('Bearer ')[1];
   try {
-    const ROLE_MIGRATION_MAP = {
-      'administrator': 'staff_view',
-      'administrator_504_CM': 'admin_504'
-      // Other roles remain the same
-    };
-
-    const usersRef = db.collection('users');
-    const snapshot = await usersRef.get();
-    
-    const migrations = [];
-    const batch = db.batch();
-    let batchCount = 0;
-
-    for (const doc of snapshot.docs) {
-      const userData = doc.data();
-      const currentRole = userData.role;
-      
-      if (ROLE_MIGRATION_MAP[currentRole]) {
-        const newRole = ROLE_MIGRATION_MAP[currentRole];
-        migrations.push({
-          uid: doc.id,
-          email: userData.email,
-          name: userData.name,
-          oldRole: currentRole,
-          newRole: newRole
-        });
-
-        if (!dryRun) {
-          // Update Firestore document
-          batch.update(doc.ref, { role: newRole });
-          
-          // Update custom claims
-          await adminAuth.setCustomUserClaims(doc.id, { role: newRole });
-          
-          batchCount++;
-          
-          // Commit batch every 500 operations (Firestore limit)
-          if (batchCount >= 500) {
-            await batch.commit();
-            batchCount = 0;
-          }
-        }
-      }
-    }
-
-    // Commit remaining operations
-    if (!dryRun && batchCount > 0) {
-      await batch.commit();
-    }
-
-    console.log(`🔄 Role migration ${dryRun ? 'preview' : 'completed'}: ${migrations.length} users affected`);
-
-    return {
-      success: true,
-      dryRun,
-      migrationsFound: migrations.length,
-      migrations: migrations,
-      message: dryRun 
-        ? `Found ${migrations.length} users that would be migrated. Call with dryRun=false to execute.`
-        : `Successfully migrated ${migrations.length} users to new role structure.`
-    };
-
+    req.user = await adminAuth.verifyIdToken(idToken);
+    next();
   } catch (error) {
-    console.error("Role migration error:", error);
-    throw new HttpsError("internal", `Failed to migrate roles: ${error.message}`);
+    return res.status(401).send('Unauthorized');
   }
 });
 
+// File download endpoint
+// URL format: /downloadStudentFile?studentId=ID&fileName=filename.pdf
+downloadApp.get('/downloadStudentFile', async (req, res) => {
+  const { studentId, fileName } = req.query;
+  if (!studentId || !fileName) {
+    return res.status(400).send('studentId and fileName required');
+  }
+  const { role, uid } = req.user;
+  
+  // Authorization check
+  const docSnap = await db.collection('students').doc(studentId).get();
+  if (!docSnap.exists) {
+    return res.status(404).send('Student not found');
+  }
+  const data = docSnap.data();
+  const staffIds = data.app?.staffIds || [];
+  const caseManagerId = data.app?.studentData?.caseManagerId;
+  const allowed = (
+    config.isAdminRole(role) || config.isStaffRole(role) ||
+    staffIds.includes(uid) || (role === 'case_manager' && uid === caseManagerId)
+  );
+  if (!allowed) {
+    return res.status(403).send('Forbidden');
+  }
+  
+  // Stream file from private bucket
+  const bucket = getStorage().bucket();
+  
+  // Check both possible file paths (students folder first for consistency)
+  let filePath = `students/${studentId}/${fileName}`;
+  let file = bucket.file(filePath);
+  
+  try {
+    const [exists] = await file.exists();
+    if (!exists) {
+      // Try alternative path
+      filePath = `students/${fileName}`;
+      file = bucket.file(filePath);
+      const [exists2] = await file.exists();
+      if (!exists2) {
+        return res.status(404).send('File not found');
+      }
+    }
+    
+    const [metadata] = await file.getMetadata();
+    const [url] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+    });
+    
+    res.json({
+      url,
+      contentType: metadata.contentType,
+      size: metadata.size
+    });
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+exports.downloadStudentFile = onRequest(
+  config.createHttpFunctionOptions(),
+  downloadApp
+);
+
+// ─── EMAIL FUNCTIONS ──────────────────────────────────────────────────────────
+exports.sendStudentEmail = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getAdminRoles());
+  
+  const { studentId, emailType, recipientEmail, subject, message } = request.data;
+  
+  // Validation
+  validateRequired(studentId, "Student ID");
+  validateRequired(emailType, "Email type");
+  validateRequired(recipientEmail, "Recipient email");
+  validateRequired(subject, "Subject");
+  validateRequired(message, "Message");
+  
+  if (!validateEmail(recipientEmail)) {
+    throw new HttpsError("invalid-argument", "Invalid recipient email format");
+  }
+  
+  if (checkSecurityThreats(subject) || checkSecurityThreats(message)) {
+    throw new HttpsError("invalid-argument", "Security threat detected");
+  }
+  
+  try {
+    // Get student data
+    const studentDoc = await db.collection(config.getCollection("students")).doc(studentId).get();
+    if (!studentDoc.exists) {
+      throw new HttpsError("not-found", "Student not found");
+    }
+    
+    const studentData = studentDoc.data();
+    
+    // Log email sending for audit purposes
+    await db.collection(config.getCollection("emailLogs")).add({
+      studentId,
+      emailType,
+      recipientEmail,
+      subject,
+      message,
+      sentBy: request.auth.uid,
+      sentAt: FieldValue.serverTimestamp(),
+      studentName: studentData.name || "Unknown"
+    });
+    
+    // TODO: Implement actual email sending logic
+    // This would typically use a service like SendGrid, Mailgun, or Firebase Extensions
+    
+    return {
+      success: true,
+      message: "Email logged successfully",
+      studentId,
+      recipientEmail
+    };
+  } catch (error) {
+    console.error("Send student email error:", error);
+    throw new HttpsError("internal", "Failed to send student email");
+  }
+});
+
+// ─── CUSTOM CLAIMS SYNC FUNCTION ──────────────────────────────────────────────
+exports.syncCustomClaims = onCall(
+  config.createFunctionOptions(), 
+  async (request) => {
+    requireRole(request, config.getAdminRoles());
+  
+  const { uid, customClaims } = request.data;
+  
+  // Validation
+  validateRequired(uid, "User ID");
+  validateRequired(customClaims, "Custom claims");
+  
+  if (typeof customClaims !== 'object') {
+    throw new HttpsError("invalid-argument", "Custom claims must be an object");
+  }
+  
+  try {
+    // Update custom claims for the user
+    await adminAuth.setCustomUserClaims(uid, customClaims);
+    
+    // Log the claim update for audit purposes
+    await db.collection("claimUpdates").add({
+      uid,
+      customClaims,
+      updatedBy: request.auth.uid,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    
+    return {
+      success: true,
+      message: "Custom claims updated successfully",
+      uid,
+      customClaims
+    };
+  } catch (error) {
+    console.error("Sync custom claims error:", error);
+    throw new HttpsError("internal", "Failed to sync custom claims");
+  }
+});
