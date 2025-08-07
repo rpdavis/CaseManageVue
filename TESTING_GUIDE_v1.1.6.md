@@ -4,6 +4,20 @@
 
 This guide covers comprehensive testing of security rules, validation utilities, and role-based access controls using the Firebase Emulator Suite and Jest testing framework.
 
+### 🔑 **Key Security Rules Summary**
+
+**Users Collection:**
+- **Read Access:** ALL authenticated users with valid roles (all 10 roles can read user data for lookups)
+- **Write Access:** Only admin roles (admin, school_admin, admin_504, sped_chair)
+
+**Students Collection:**
+- **Read-Only Roles:** teacher, staff_view, paraeducator (can read assigned students only)
+- **Read-Write Roles:** admin, school_admin, admin_504, sped_chair, case_manager, service_provider, staff_edit
+
+**Role Validation:**
+- **Valid:** Only the 10 official roles are accepted
+- **Invalid:** Any other role names (including old/deprecated ones) are rejected
+
 ## ✅ Automated Tests Status
 
 ### 🟢 **Validation Tests - FULLY WORKING (12/12 passing)**
@@ -63,22 +77,28 @@ Navigate to: http://127.0.0.1:4000/firestore
 | `school_admin` | ✅ | ✅ | Allow |
 | `admin_504` | ✅ | ✅ | Allow |
 | `sped_chair` | ✅ | ✅ | Allow |
-| `teacher` | ✅ | ❌ | Read only |
-| `staff_view` | ✅ | ❌ | Read only |
-| `case_manager` | ✅ | ❌ | Read only |
+| `teacher` | ✅ | ❌ | **Read only** |
+| `staff_view` | ✅ | ❌ | **Read only** |
+| `staff_edit` | ✅ | ❌ | **Read only** |
+| `case_manager` | ✅ | ❌ | **Read only** |
+| `service_provider` | ✅ | ❌ | **Read only** |
+| `paraeducator` | ✅ | ❌ | **Read only** |
 | Unauthenticated | ❌ | ❌ | Deny all |
 
 #### **Test Students Collection**
 
 | Role | Read Students | Write Students | Expected Result |
 |------|---------------|----------------|-----------------|
-| `admin` | ✅ | ✅ | Allow |
-| `school_admin` | ✅ | ✅ | Allow |
-| `teacher` | ✅ | ✅ | Allow |
-| `case_manager` | ✅ | ✅ | Allow |
-| `service_provider` | ✅ | ✅ | Allow |
-| `staff_view` | ✅ | ❌ | Read only |
-| `staff_edit` | ✅ | ✅ | Allow |
+| `admin` | ✅ | ✅ | Full access |
+| `school_admin` | ✅ | ✅ | Full access |
+| `admin_504` | ✅ | ✅ | Full access (504 students only) |
+| `sped_chair` | ✅ | ✅ | Full access |
+| `staff_view` | ✅ | ❌ | **Read only** |
+| `staff_edit` | ✅ | ✅ | Full access |
+| `case_manager` | ✅ | ✅ | Assigned students only |
+| `service_provider` | ✅ | ✅ | Assigned students only |
+| `teacher` | ✅ | ❌ | **Read only** (assigned students) |
+| `paraeducator` | ✅ | ❌ | **Read only** (assigned students) |
 | Unauthenticated | ❌ | ❌ | Deny all |
 
 #### **Test App Settings Collection**
@@ -116,10 +136,20 @@ Navigate to: http://127.0.0.1:4000/functions
 
 #### **Role Validation**
 Test these roles in the user importer:
+
+**✅ Valid Roles (should be ACCEPTED):**
 ```
-✅ Valid: admin, school_admin, staff_view, staff_edit, admin_504, sped_chair, case_manager, teacher, service_provider, paraeducator
-❌ Invalid: administrator, super_admin, guest, invalid_role
+admin, school_admin, staff_view, staff_edit, admin_504, sped_chair, 
+case_manager, teacher, service_provider, paraeducator
 ```
+
+**❌ Invalid Roles (should be REJECTED):**
+```
+administrator, super_admin, guest, invalid_role, admin_user, 
+teacher_assistant, student, parent, ADMIN (case sensitive)
+```
+
+**What this means:** The validation tests verify that only the 10 official roles are accepted, and any other role names (including old/deprecated ones) are properly rejected.
 
 #### **Email Validation**
 ```

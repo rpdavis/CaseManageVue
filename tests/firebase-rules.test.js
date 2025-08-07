@@ -24,27 +24,27 @@ describe('Firebase Security Rules', () => {
           service cloud.firestore {
             match /databases/{database}/documents {
               // Users collection
-              match /users/{userId} {
-                allow read: if request.auth != null;
-                allow write: if request.auth != null && 
-                  (request.auth.token.role == 'admin' || 
-                   request.auth.token.role == 'school_admin' || 
-                   request.auth.token.role == 'admin_504' || 
-                   request.auth.token.role == 'sped_chair');
-              }
+                        match /users/{userId} {
+            allow read: if request.auth != null &&
+              request.auth.token.role in ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair', 'case_manager', 'teacher', 'service_provider', 'paraeducator'];
+            allow write: if request.auth != null &&
+              (request.auth.token.role == 'admin' ||
+               request.auth.token.role == 'school_admin' ||
+               request.auth.token.role == 'admin_504' ||
+               request.auth.token.role == 'sped_chair');
+          }
               
-              // Students collection
+              // Students collection (simplified for testing)
               match /students/{studentId} {
-                allow read: if request.auth != null;
+                allow read: if request.auth != null &&
+                  request.auth.token.role in ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair', 'case_manager', 'teacher', 'service_provider', 'paraeducator'];
                 allow write: if request.auth != null && 
-                  (request.auth.token.role == 'admin' || 
-                   request.auth.token.role == 'school_admin' || 
-                   request.auth.token.role == 'admin_504' || 
-                   request.auth.token.role == 'sped_chair' || 
-                   request.auth.token.role == 'case_manager' || 
-                   request.auth.token.role == 'teacher' || 
-                   request.auth.token.role == 'service_provider' || 
-                   request.auth.token.role == 'paraeducator' || 
+                  (request.auth.token.role == 'admin' ||
+                   request.auth.token.role == 'school_admin' ||
+                   request.auth.token.role == 'admin_504' ||
+                   request.auth.token.role == 'sped_chair' ||
+                   request.auth.token.role == 'case_manager' ||
+                   request.auth.token.role == 'service_provider' ||
                    request.auth.token.role == 'staff_edit');
               }
               
