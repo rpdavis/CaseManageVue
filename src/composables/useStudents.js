@@ -63,17 +63,8 @@ export default function useStudents() {
       const convertedData = convertFirestoreMaps(data)
       return { id: doc.id, ...convertedData }
     })
-    
-    // Debug: Log the first student with aeries data to see the structure
-    const studentWithAeries = students.value.find(s => s.aeries)
-    if (studentWithAeries) {
-      console.log('🔍 useStudents DEBUG - Student with aeries:', studentWithAeries)
-      console.log('🔍 useStudents DEBUG - aeries.schedule:', studentWithAeries.aeries?.schedule)
-      console.log('🔍 useStudents DEBUG - aeries.schedule type:', typeof studentWithAeries.aeries?.schedule)
-      if (studentWithAeries.aeries?.schedule) {
-        console.log('🔍 useStudents DEBUG - schedule keys:', Object.keys(studentWithAeries.aeries.schedule))
-      }
-    }
+
+
   }
 
   // Function to set students from external source (for role-based loading)
@@ -106,7 +97,7 @@ export default function useStudents() {
         }
         
         // Sync to Google Sheets
-        console.log('Syncing student update to Google Sheets...')
+  
         await sync.updateSheetData(students.value)
       }
     } catch (error) {
@@ -136,7 +127,7 @@ export default function useStudents() {
         students.value = students.value.filter(s => s.id !== id)
         
         // Sync to Google Sheets
-        console.log('Syncing student deletion to Google Sheets...')
+  
         await sync.updateSheetData(students.value)
       }
     } catch (error) {

@@ -1,12 +1,9 @@
 import { ref } from 'vue'
+import { getGoogleApiConfig } from '@/config/googleApiConfig'
 
-// Google API configuration - Original from repository
-const CLIENT_ID = '756483333257-kh1cv865e0buv0cv9g0v1h7ghq7s0e70.apps.googleusercontent.com'
-const API_KEY = 'AIzaSyDx1jbQT-FzgzjASFqVA2kbAHWJ_TeUzdY'
-const DISCOVERY_DOCS = [
-  'https://sheets.googleapis.com/$discovery/rest?version=v4'
-]
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
+// Get Google API configuration from centralized config
+const googleConfig = getGoogleApiConfig()
+const { clientId: CLIENT_ID, apiKey: API_KEY, discoveryDocs: DISCOVERY_DOCS, scope: SCOPES } = googleConfig
 
 export default function useGoogleSheetsClient() {
   const isSignedIn = ref(false)

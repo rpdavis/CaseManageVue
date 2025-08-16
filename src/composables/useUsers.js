@@ -47,32 +47,60 @@ export default function useUsers() {
   }
 
   const userRoles = computed(() => {
+    const sortByLastName = (users) => users.sort((a, b) => {
+      // Extract last names for sorting
+      const getLastName = (user) => {
+        const fullName = user.name || user.email || user.id
+        const nameParts = fullName.split(' ')
+        return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+      }
+      return getLastName(a).localeCompare(getLastName(b))
+    })
+    
     return {
-      teachers: userList.value.filter(u => ["teacher", "case_manager", "sped_chair"].includes(u.role)),
-      caseManagers: userList.value.filter(u => ["case_manager", "sped_chair", "admin_504"].includes(u.role)),
-      speech: userList.value.filter(u => u.provider === 'SLP'),
-      ot: userList.value.filter(u => u.provider === 'OT'),
-      mh: userList.value.filter(u => u.provider === 'MH'),
-      pt: userList.value.filter(u => u.provider === 'PT'),
-      sc: userList.value.filter(u => u.provider === 'SC'),
-      tr: userList.value.filter(u => u.provider === 'TR'),
-      aud: userList.value.filter(u => u.provider === 'AUD'),
-      vi: userList.value.filter(u => u.provider === 'VI'),
-      at: userList.value.filter(u => u.provider === 'AT'),
-      dhh: userList.value.filter(u => u.provider === 'DHH'),
-      om: userList.value.filter(u => u.provider === 'O&M'),
-      bis: userList.value.filter(u => u.provider === 'BIS'),
-      hn: userList.value.filter(u => u.provider === 'HN'),
-      sw: userList.value.filter(u => u.provider === 'SW')
+      teachers: sortByLastName(userList.value.filter(u => ["teacher", "case_manager", "sped_chair"].includes(u.role))),
+      caseManagers: sortByLastName(userList.value.filter(u => ["case_manager", "sped_chair", "admin_504"].includes(u.role))),
+      speech: sortByLastName(userList.value.filter(u => u.provider === 'SLP')),
+      ot: sortByLastName(userList.value.filter(u => u.provider === 'OT')),
+      mh: sortByLastName(userList.value.filter(u => u.provider === 'MH')),
+      pt: sortByLastName(userList.value.filter(u => u.provider === 'PT')),
+      sc: sortByLastName(userList.value.filter(u => u.provider === 'SC')),
+      tr: sortByLastName(userList.value.filter(u => u.provider === 'TR')),
+      aud: sortByLastName(userList.value.filter(u => u.provider === 'AUD')),
+      vi: sortByLastName(userList.value.filter(u => u.provider === 'VI')),
+      at: sortByLastName(userList.value.filter(u => u.provider === 'AT')),
+      dhh: sortByLastName(userList.value.filter(u => u.provider === 'DHH')),
+      om: sortByLastName(userList.value.filter(u => u.provider === 'O&M')),
+      bis: sortByLastName(userList.value.filter(u => u.provider === 'BIS')),
+      hn: sortByLastName(userList.value.filter(u => u.provider === 'HN')),
+      sw: sortByLastName(userList.value.filter(u => u.provider === 'SW'))
     }
   })
 
   const caseManagers = computed(() => {
     return userList.value.filter(u => ["case_manager", "sped_chair", "admin_504"].includes(u.role))
+      .sort((a, b) => {
+        // Extract last names for sorting
+        const getLastName = (user) => {
+          const fullName = user.name || user.email || user.id
+          const nameParts = fullName.split(' ')
+          return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+        }
+        return getLastName(a).localeCompare(getLastName(b))
+      })
   })
 
   const teacherList = computed(() => {
     return userList.value.filter(u => ["teacher", "case_manager", "sped_chair"].includes(u.role))
+      .sort((a, b) => {
+        // Extract last names for sorting
+        const getLastName = (user) => {
+          const fullName = user.name || user.email || user.id
+          const nameParts = fullName.split(' ')
+          return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+        }
+        return getLastName(a).localeCompare(getLastName(b))
+      })
   })
 
   return { 

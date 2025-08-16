@@ -39,12 +39,7 @@
       @reset-form="resetForm"
     />
     
-    <!-- Export Options Section -->
-    <TestingExportOptions
-      @create-google-sheet-with-data="createGoogleSheetWithData"
-      @create-blank-google-sheet="createBlankGoogleSheet"
-      @export-to-csv="exportToCSV"
-    />
+
   </div>
 </template>
 
@@ -60,7 +55,6 @@ import { useCustomTabs } from '@/composables/useCustomTabs'
 // Components
 import GoogleSheetsConnector from './testing/GoogleSheetsConnector.vue'
 import CustomTabManager from './testing/CustomTabManager.vue'
-import TestingExportOptions from './testing/TestingExportOptions.vue'
 
 // Composables
 const { students, fetchStudents } = useStudents()

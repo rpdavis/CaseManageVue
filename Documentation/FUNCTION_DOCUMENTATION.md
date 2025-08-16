@@ -124,6 +124,18 @@
 - Enables efficient student-paraeducator queries
 **Security**: Automatic background process
 
+### **`syncProjectOwnersScheduled`** - ✅ **AUTOMATIC SCHEDULED**
+**Purpose**: Periodically syncs Google Cloud project IAM owners/admins to Firestore
+**Trigger**: Cloud Scheduler (daily)
+**App Integration**:
+- **Database**: Caches owners in `system/owners`
+- **Security**: Serves as the source for first-admin bootstrap
+**Functionality**:
+- Calls Cloud Resource Manager `projects.getIamPolicy`
+- Extracts `user:` members from `roles/owner` and `roles/firebase.admin`
+- Writes `emails[]`, `updatedAt`, `etag` to `system/owners`
+**Security**: Requires service account to have IAM read (`resourcemanager.projects.getIamPolicy`)
+
 ---
 
 ## 📁 **FILE SECURITY FUNCTIONS**
@@ -454,16 +466,40 @@
 
 ---
 
+## 🔧 **ADMIN/UTILITY CALLABLES**
+
+### **`syncProjectOwners`** - ✅ **ADMIN CALLABLE**
+**Purpose**: Manually sync IAM owners/admins to Firestore cache
+**Trigger**: Callable (admin-only)
+**Functionality**:
+- Same logic as scheduled sync; returns the number of emails cached
+**Security**: Admin-only; logs sync operations
+
+### **`bootstrapAdminForCurrentUser`** - ✅ **POST-LOGIN CALLABLE**
+**Purpose**: Elevates the current user to admin if their verified email is an IAM owner
+**Trigger**: Callable (invoke immediately after login)
+**App Integration**:
+- **Frontend**: Call right after Firebase Auth sign-in
+- **Database**: Writes `users/{uid}` with `role` and flips `app_settings/bootstrap.completed`
+**Functionality**:
+- Reads `system/owners`; if empty, attempts a one-time refresh
+- If `emailVerified && email ∈ owners`: sets role `admin` and marks bootstrap complete
+- Else: ensures role `staff_view`
+**Security**:
+- Requires authenticated user; relies on verified email and owners cache
+- Logs all elevations
+
+---
+
 ## 📋 **FUNCTION STATUS SUMMARY**
 
 ### **✅ ACTIVELY USED (Production Functions)**
 - User management functions
-- File security functions
+- File security and access functions
 - School management functions
 - Teacher feedback functions
-- API integration functions
-- Shared drive functions
 - Background trigger functions
+- Owners sync and bootstrap functions (scheduled + callable)
 
 ### **⚠️ TESTING ONLY (Development Functions)**
 - `testSchools`
@@ -481,6 +517,7 @@
 - `rebuildParaeducatorStudentIds` - Critical for student data
 - `removeDownloadTokensOnFinalize` - Critical for FERPA compliance
 - `removeDownloadTokensOnMetadata` - Critical for FERPA compliance
+- `syncProjectOwnersScheduled` - auto create owner admin on first sign-in
 
 ---
 

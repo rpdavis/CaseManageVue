@@ -4,6 +4,14 @@
       "collectionGroup": "students",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "app.staffIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "app.studentData.lastName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "students",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "app.studentData.caseManagerId", "order": "ASCENDING" },
         { "fieldPath": "app.studentData.lastName", "order": "ASCENDING" }
       ]

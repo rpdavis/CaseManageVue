@@ -113,5 +113,5 @@ export default {
 </script>
 
 <style scoped>
-/* Styles are in admin-panel.css */
+/* Component styles included in main.css */
 </style>

@@ -64,7 +64,64 @@ export const adminGuard = async (to, from, next) => {
 }
 
 export const setupGuards = (router) => {
-  // This function can be used to set up global navigation guards if needed
-  // For now, the guards are applied individually to routes
+  // Global navigation guard to check authentication
+  router.beforeEach(async (to, from, next) => {
+    const authStore = useAuthStore()
+    
+    // Allow access to login page immediately
+    if (to.path === '/login') {
+      return next()
+    }
+    
+    // Only check auth for routes that require it
+    if (!to.meta.requiresAuth) {
+      return next()
+    }
+    
+    // Quick check - if auth is already loaded and user exists, allow immediately
+    if (!authStore.isLoading && authStore.currentUser && authStore.currentUser.role) {
+      // Quick role check
+      if (to.meta.allowedRoles && !to.meta.allowedRoles.includes(authStore.currentUser.role)) {
+        console.log('🚪 User role not allowed for route - redirecting to students')
+        return next('/students')
+      }
+      return next()
+    }
+    
+    // Wait for auth to initialize (with timeout to prevent infinite waiting)
+    let attempts = 0
+    while (authStore.isLoading && attempts < 100) { // Max 5 seconds
+      await new Promise(resolve => setTimeout(resolve, 50))
+      attempts++
+    }
+    
+    // If still loading after timeout, redirect to login
+    if (authStore.isLoading) {
+      console.log('🚪 Auth loading timeout - redirecting to login')
+      return next('/login')
+    }
+    
+    // If no user is authenticated, redirect to login
+    if (!authStore.currentUser) {
+      console.log('🚪 No authenticated user - redirecting to login')
+      return next('/login')
+    }
+    
+    // If user has no role, redirect to login
+    if (!authStore.currentUser.role) {
+      console.log('🚪 User has no role - redirecting to login')
+      return next('/login')
+    }
+    
+    // Check role permissions
+    if (to.meta.allowedRoles && !to.meta.allowedRoles.includes(authStore.currentUser.role)) {
+      console.log('🚪 User role not allowed for route - redirecting to students')
+      return next('/students')
+    }
+    
+    // Allow access
+    next()
+  })
+  
   console.log('Router guards setup completed')
 }

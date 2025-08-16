@@ -113,8 +113,8 @@
           <label>Case Manager</label>
           <select v-model="currentFilters.cm" @change="applyFilters()" class="filter-select">
             <option value="all">All Case Managers</option>
-            <option v-for="cm in caseManagers" :key="cm.id" :value="cm.id">
-              {{ cm.name || cm.email || cm.id }}
+            <option v-for="cm in caseManagersWithCounts" :key="cm.id" :value="cm.id">
+              {{ cm.displayName || cm.name || cm.email || cm.id }}
             </option>
           </select>
         </div>
@@ -148,6 +148,17 @@
             <option value="all">All Plans</option>
             <option value="IEP">IEP</option>
             <option value="504">504</option>
+          </select>
+        </div>
+
+        <!-- Service Provider Filter -->
+        <div class="filter-group">
+          <label>Service Provider</label>
+          <select v-model="currentFilters.serviceProvider" @change="applyFilters()" class="filter-select">
+            <option value="all">All Service Providers</option>
+            <option v-for="sp in serviceProviders" :key="sp.id" :value="sp.id">
+              {{ sp.name || sp.email || sp.id }}
+            </option>
           </select>
         </div>
       </div>
@@ -277,23 +288,13 @@
     />
     
     <TeacherFeedbackDialog
-      v-if="showFeedbackDialog && canSendFeedbackForStudent"
+      v-if="showFeedbackDialog"
       :student="getStudentById(feedbackStudentId)"
       :current-user="currentUser"
       :user-map="userMapObj"
       @close="showFeedbackDialog = false"
       @form-sent="handleFormSent"
     />
-    
-    <!-- Show error message if user tries to access feedback without permission -->
-    <div v-if="showFeedbackDialog && !canSendFeedbackForStudent" class="permission-error">
-      <div class="error-content">
-        <h3>Access Denied</h3>
-        <p>You don't have permission to send teacher feedback forms.</p>
-        <p>Only case managers, administrators, and SPED chairs can send feedback forms.</p>
-        <button @click="showFeedbackDialog = false" class="btn-primary">Close</button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -340,25 +341,7 @@ import TeacherFeedbackDialog from '@/components/students/TeacherFeedbackDialog.v
 // Initialize composables
 const studentData = useStudentData()
 const filterData = useStudentFilters(studentData)
-const roleView = useRoleBasedView(studentData, filterData)
-
-// Import RoleUtils
-import { RoleUtils } from '@/composables/roles/roleConfig'
-
-// Check if user can send feedback for the selected student
-const canSendFeedbackForStudent = computed(() => {
-  if (!showFeedbackDialog.value || !feedbackStudentId.value) return false
-  
-  const student = getStudentById(feedbackStudentId.value)
-  if (!student || !currentUser.value) return false
-  
-  return RoleUtils.canSendFeedback(
-    currentUser.value.uid,
-    currentUser.value.role,
-    student,
-    studentData
-  )
-})
+  const roleView = useRoleBasedView(studentData, filterData)
 
 // Debug: Watch for paraeducator visible students changes
 console.log('🔍 STUDENTS VIEW DEBUG: Setting up watcher, currentRole:', roleView.currentRole?.value)
@@ -384,10 +367,12 @@ const {
   students,
   userMapObj,
   caseManagers,
+  caseManagersWithCounts,
   teacherList,
   userRoles,
   aideAssignment,
   paraeducators,
+  serviceProviders,
   // Computed
   currentUser,
   isAdmin,
@@ -560,11 +545,10 @@ const selectedRadioText = computed(() => {
 })
 </script>
 
-<style scoped>
+<style>
 .students-view {
-  padding: 20px;
-  padding-top: 23px;
-  max-width: 1400px;
+  padding: 23px 10px 10px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 
@@ -649,7 +633,7 @@ const selectedRadioText = computed(() => {
   gap: 8px;
 }
 
-.radio-group {
+.students-view .radio-group {
   display: flex;
   align-items: center;
   gap: 0;
@@ -660,7 +644,7 @@ const selectedRadioText = computed(() => {
   flex-direction: row;
 }
 
-.radio-btn {
+.students-view .radio-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -676,28 +660,28 @@ const selectedRadioText = computed(() => {
   position: relative;
 }
 
-.radio-btn:hover {
+.students-view .radio-btn:hover {
   background: #e9ecef;
   color: #495057;
 }
 
-.radio-btn.active {
+.students-view .radio-btn.active {
   background: #007bff;
   color: white;
   font-weight: 600;
 }
 
-.radio-btn.active:hover {
+.students-view .radio-btn.active:hover {
   background: #0056b3;
   color: white;
 }
 
-.radio-btn.disabled {
+.students-view .radio-btn.disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.radio-btn.disabled:hover {
+.students-view .radio-btn.disabled:hover {
   background: #f8f9fa;
   color: #6c757d;
 }
@@ -708,7 +692,7 @@ const selectedRadioText = computed(() => {
   text-decoration-thickness: 2px;
 }
 
-.radio-btn input[type="radio"] {
+.students-view .radio-btn input[type="radio"] {
   margin: 0;
   opacity: 0;
   position: absolute;
@@ -809,28 +793,38 @@ const selectedRadioText = computed(() => {
 }
 
 @media (max-width: 768px) {
-  .page-header {
+  .students-view .page-header {
     flex-direction: column;
     align-items: stretch;
     gap: 15px;
   }
   
-  .header-controls {
+  .students-view .header-controls {
     flex-direction: column;
     gap: 8px;
   }
   
-  .filter-group {
+  .students-view .filter-group {
     align-items: flex-start;
   }
   
-  .radio-group {
+  .students-view .radio-group {
     justify-content: center;
   }
   
-  .sort-select {
+  .students-view .sort-select {
     width: 100%;
     min-width: auto;
+  }
+  
+  /* Make filters panel more mobile friendly */
+  .students-view .filters-panel {
+    padding: 10px;
+  }
+  
+  .students-view .filters-content {
+    grid-template-columns: 1fr;
+    gap: 15px;
   }
 }
 
@@ -997,50 +991,110 @@ const selectedRadioText = computed(() => {
   }
 }
 
-/* Permission Error Dialog */
-.permission-error {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+/* Mobile/Phone View - Only show student info and accommodation columns */
+@media (max-width: 768px) {
+
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-direction: column;
+}
+  /* Use maximum specificity to override any other CSS */
+  .students-view .students-table tbody th:nth-child(2), /* Services */
+  .students-view .students-table tbody td:nth-child(2),
+  .students-view .students-table thead th:nth-child(2),
+  .students-view .students-table th:nth-child(2),
+  .students-view .students-table td:nth-child(2),
+  .students-view .students-table tbody th:nth-child(3), /* Schedule */
+  .students-view .students-table tbody td:nth-child(3),
+  .students-view .students-table thead th:nth-child(3),
+  .students-view .students-table th:nth-child(3),
+  .students-view .students-table td:nth-child(3),
+  .students-view .students-table tbody th:nth-child(6), /* Documents */
+  .students-view .students-table tbody td:nth-child(6),
+  .students-view .students-table thead th:nth-child(6),
+  .students-view .students-table th:nth-child(6),
+  .students-view .students-table td:nth-child(6),
+  .students-view .students-table tbody th:nth-child(7), /* Actions */
+  .students-view .students-table tbody td:nth-child(7),
+  .students-view .students-table thead th:nth-child(7),
+  .students-view .students-table th:nth-child(7),
+  .students-view .students-table td:nth-child(7) {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+  
+  /* Adjust column widths for remaining columns */
+  .students-view .students-table th:nth-child(1), /* Student Info */
+  .students-view .students-table td:nth-child(1) {
+    width: 35% !important;
+  }
+  
+  .students-view .students-table th:nth-child(4), /* Assessment Accommodations */
+  .students-view .students-table td:nth-child(4) {
+    width: 32.5% !important;
+  }
+  
+  .students-view .students-table th:nth-child(5), /* Instruction Accommodations */
+  .students-view .students-table td:nth-child(5) {
+    width: 32.5% !important;
+  }
+  
+  /* Reduce table font size for mobile */
+  .students-view .students-table {
+    font-size: 0.8rem !important;
+  }
+  
+  /* Reduce cell padding */
+  .students-view .students-table th,
+  .students-view .students-table td {
+    padding: 4px ;
+  }
+  
+  /* Flag styles with higher specificity - MUST come after general padding */
+  .students-view .students-table td.instruction-cell.with-flag {
+    padding-top: calc(5px + var(--spacing-md)) !important;
+    padding-right: 4px !important;
+    padding-bottom: 4px !important;
+    padding-left: 4px !important;
+  }
+ 
+    
+  /* Adjust row height for mobile */
+  .students-view .students-table tbody tr {
+    height: 8rem !important;
+  }
+  
+  .students-view .students-table tbody td {
+    height: 8rem !important;
+  }
 }
 
-.error-content {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  max-width: 400px;
-  text-align: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+/* Search bar full width on mobile */
+@media (max-width: 768px) {
+  .students-view .search-bar,
+  .students-view .search-bar input,
+  .students-view .search-container,
+  .students-view .search-input {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
 }
 
-.error-content h3 {
-  color: #d32f2f;
-  margin-bottom: 1rem;
-}
-
-.error-content p {
-  margin-bottom: 1rem;
-  color: #666;
-}
-
-.error-content .btn-primary {
-  background: #1976d2;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.error-content .btn-primary:hover {
-  background: #1565c0;
+/* Alternative mobile approach - hide by class if nth-child isn't working */
+@media (max-width: 768px) {
+  .students-view .service-column,
+  .students-view .schedule-column,
+  .students-view .documents-column,
+  .students-view .actions-column {
+    display: none !important;
+  }
 }
 
 </style>

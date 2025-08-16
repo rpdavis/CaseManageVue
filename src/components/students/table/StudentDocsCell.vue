@@ -1,5 +1,5 @@
 <template>
-  <td>
+  <td class="documents-column">
     <div class="docs-item">
       
       <a 

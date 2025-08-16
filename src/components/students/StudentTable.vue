@@ -10,13 +10,13 @@
         </template>
         <!-- Regular View Headers -->
         <template v-else>
-          <th class="print">Student Info</th>
-          <th class="print">Services</th>
-          <th class="print">Schedule</th>
-          <th class="print">Instruction Accommodations</th>
-          <th class="print">Assessment Accommodations</th>
-          <th class="print">Docs</th>
-          <th class="print">Actions</th>
+          <th class="print student-info-column">Student Info</th>
+          <th class="print service-column">Services</th>
+          <th class="print schedule-column">Schedule</th>
+          <th class="print instruction-column">Instruction Accommodations</th>
+          <th class="print assessment-column">Assessment Accommodations</th>
+          <th class="print documents-column">Docs</th>
+          <th class="print actions-column">Actions</th>
         </template>
       </tr>
     </thead>
@@ -29,7 +29,24 @@
             <div class="student-name"><strong>{{ getDisplayValue(student, 'firstName') }} {{ getDisplayValue(student, 'lastName') }}</strong></div>
             <div class="std-info-subheading">
               <div>Grd: {{ getDisplayValue(student, 'grade') }} | Prg: {{ getDisplayValue(student, 'plan') }}</div>
-              <div>CM: {{ getUserName(getCaseManagerId(student)) }}</div>
+              <div>CM: <span 
+                class="case-manager-name" 
+                :data-tooltip="getCaseManagerTooltip(getCaseManagerId(student))"
+                @mouseenter="$event.target.classList.add('tooltip-active')"
+                @mouseleave="$event.target.classList.remove('tooltip-active')"
+              >{{ getUserName(getCaseManagerId(student)) }}</span></div>
+              <div v-if="(student.app?.flags?.customFlags || []).length" class="custom-flags">
+              <span
+                v-for="color in ['blue', 'yellow', 'red']"
+                v-if="(student.app?.flags?.customFlags || []).filter(f => f.color === color).length"
+                :key="color"
+                class="flag-chip"
+                :class="color"
+                :data-tooltip="(student.app?.flags?.customFlags || []).filter(f => f.color === color).map(f => `• ${f.text}`).join('\n')"
+              >
+                <span class="flag-dot"></span>{{ (student.app?.flags?.customFlags || []).filter(f => f.color === color).length }}
+              </span>
+            </div>
             </div>
           </td>
           
@@ -41,12 +58,20 @@
                   <div class="period-assignment">
                     <div class="primary-line">
                       <span class="period-label">{{ getPeriodLabel ? getPeriodLabel(period) : period }}:</span>
-                      <span class="primary-teacher">{{ getUserInitialLastName(periodData.teacherId || periodData) }}</span>
+                      <span 
+                        class="primary-teacher teacher-name" 
+                        :data-tooltip="getUserTooltip(periodData.teacherId || periodData)"
+                        @mouseenter="$event.target.classList.add('tooltip-active')"
+                        @mouseleave="$event.target.classList.remove('tooltip-active')"
+                      >{{ getUserInitialLastName(periodData.teacherId || periodData) }}</span>
                     </div>
                     <div v-if="isCoTeaching(periodData)" class="coteaching-info">
                       <span 
-                        class="coteaching-indicator"
+                        class="coteaching-indicator teacher-name"
                         :title="`Co-teach ${periodData.coTeaching.subject}`"
+                        :data-tooltip="getUserTooltip(periodData.coTeaching.caseManagerId)"
+                        @mouseenter="$event.target.classList.add('tooltip-active')"
+                        @mouseleave="$event.target.classList.remove('tooltip-active')"
                       >
                         {{ getUserInitialLastName(periodData.coTeaching.caseManagerId) }} (C{{ periodData.coTeaching.subject.charAt(0) }})
                       </span>
@@ -71,19 +96,37 @@
         <!-- Regular View Cells -->
         <template v-else>
           <!-- Student Info Cell -->
-          <td>
+          <td class="student-info-column">
             <div class="student-name">
               <strong>{{ getDisplayValue(student, 'firstName') }} {{ getDisplayValue(student, 'lastName') }}</strong>
               <span class="data-source" :title="`Data source: ${getSourceValue(student, 'firstName')}`">
                 {{ getSourceValue(student, 'firstName') === 'Override' ? '🔒' : 
-                   getSourceValue(student, 'firstName') === 'App' ? '📱' :
+                   getSourceValue(student, 'firstName') === 'App' ? '' :
                    getSourceValue(student, 'firstName') === 'Aeries' ? '📊' :
                    getSourceValue(student, 'firstName') === 'SEIS' ? '📋' : '' }}
               </span>
             </div>
             <div class="std-info-subheading">
               <div>Grd: {{ getDisplayValue(student, 'grade') }} | Prg: {{ getDisplayValue(student, 'plan') }}</div>
-              <div>CM: {{ getUserName(getCaseManagerId(student)) }}</div>
+              <div>CM: <span 
+                class="case-manager-name" 
+                :data-tooltip="getCaseManagerTooltip(getCaseManagerId(student))"
+                @mouseenter="$event.target.classList.add('tooltip-active')"
+                @mouseleave="$event.target.classList.remove('tooltip-active')"
+              >{{ getUserName(getCaseManagerId(student)) }}</span></div>
+              <div v-if="(student.app?.flags?.customFlags || []).length" class="custom-flags">
+                <template v-for="color in ['blue', 'yellow', 'red']" :key="color">
+                  <span
+                    v-if="(student.app?.flags?.customFlags || []).filter(f => f.color === color).length"
+                    class="flag-chip"
+                    :class="`flag-${color}`"
+                    :data-tooltip="(student.app?.flags?.customFlags || []).filter(f => f.color === color).map(f => `• ${f.text}`).join('\n')"
+                  >
+                    <Flag :size="16" class="lucide-flag" />
+                    <span class="flag-count">{{ (student.app?.flags?.customFlags || []).filter(f => f.color === color).length }}</span>
+                  </span>
+                </template>
+              </div>
             </div>
             <div class="student-dates print">
               <span class="badge badge-review plan-review" :class="getReviewUrgencyClass(student)">PR: {{ formatDate(getDisplayValue(student, 'reviewDate')) }}</span>
@@ -117,6 +160,7 @@
             :get-schedule="getSchedule"
             :get-user-initial-last-name="getUserInitialLastName"
             :get-period-label="getPeriodLabel"
+            :get-user-tooltip="getUserTooltip"
           />
           
           <!-- Instruction Accom. Cell -->
@@ -175,6 +219,7 @@ import ActionsCell from './table/StudentActionsCell.vue'
 import ScheduleCell from './table/StudentScheduleCell.vue'
 import ServicesCell from './table/StudentServicesCell.vue'
 import AccommodationsCell from './table/AccommodationsCell.vue'
+import { Flag } from 'lucide-vue-next'
 
 const props = defineProps({
   students: {
@@ -216,6 +261,8 @@ const {
   getUserName,
   getUserInitials,
   getUserInitialLastName,
+  getUserTooltip,
+  getCaseManagerTooltip,
   formatDate,
   getFlagClass,
   hasFlags,
@@ -249,27 +296,4 @@ const isCoTeaching = (periodData) => {
 
 
 
-// DEBUG: Check schedule data sources (moved to StudentForm.vue)
-
-watch(() => props.student, (newStudent) => {
-  if (newStudent && Object.keys(newStudent).length > 0) {
-    // ... other fields ...
-    form.schedule =
-      newStudent.app?.schedule?.periods ||
-      newStudent.schedule ||
-      newStudent.aeries?.schedule?.periods ||
-      {};
-    console.log('StudentForm DEBUG - form.schedule:', form.schedule);
-    console.log('StudentForm DEBUG - aeries.schedule:', props.student.aeries?.schedule);
-    console.log('StudentForm DEBUG - app.schedule.periods:', props.student.app?.schedule?.periods);
-    // ... other fields ...
-
-    // DEBUG: Check schedule data in watcher (moved to StudentForm.vue)
-  }
-}, { immediate: true, deep: true })
 </script>
-
-<!-- Styles now imported from ./table/StudentTable.css -->
-
-// Styles removed for migration to external CSS files
-// Styles removed for migration to external CSS files

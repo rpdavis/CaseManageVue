@@ -219,13 +219,13 @@ export function useBaseRoleView(studentData, filterData) {
       return filters.providerView !== 'service_provider' && filters.teacher === 'all'
     }
     
-    // Sped chairs and admin_504 can use class view ONLY in SP mode or when filtering by teacher
-    if (['sped_chair', 'admin_504', 'administrator_504_CM'].includes(role)) {
+    // Sped chairs can use class view ONLY in SP mode or when filtering by teacher
+    if (['sped_chair'].includes(role)) {
       return filters.providerView !== 'service_provider' && filters.teacher === 'all'
     }
     
     // Admin and staff roles can use class view when filtering by teacher or paraeducator
-    if (['admin', 'school_admin', 'staff_view', 'staff_edit', 'administrator'].includes(role)) {
+    if (['admin', 'school_admin', 'staff_view', 'staff_edit', 'administrator', 'admin_504', 'administrator_504_CM'].includes(role)) {
       return filters.teacher === 'all' && filters.paraeducator === 'all'
     }
     

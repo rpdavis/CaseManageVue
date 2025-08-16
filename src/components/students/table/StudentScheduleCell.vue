@@ -1,17 +1,25 @@
 <template>
-  <td>
+  <td class="schedule-column">
     <div v-if="getSchedule(student)" class="schedule-list">
       <ul>
         <li v-for="(periodData, period) in getSchedule(student)" :key="period" class="schedule-period">
           <div class="period-assignment">
             <div class="primary-line">
               <span class="period-label">{{ getPeriodLabel ? getPeriodLabel(period) : period }}:</span>
-              <span class="primary-teacher">{{ getUserInitialLastName(periodData.teacherId || periodData) }}</span>
+              <span 
+                class="primary-teacher teacher-name" 
+                :data-tooltip="getUserTooltip(periodData.teacherId || periodData)"
+                @mouseenter="$event.target.classList.add('tooltip-active')"
+                @mouseleave="$event.target.classList.remove('tooltip-active')"
+              >{{ getUserInitialLastName(periodData.teacherId || periodData) }}</span>
             </div>
             <div v-if="isCoTeaching(periodData)" class="coteaching-info">
               <span 
-                class="coteaching-indicator"
+                class="coteaching-indicator teacher-name"
                 :title="`Co-teach ${periodData.coTeaching.subject}`"
+                :data-tooltip="getUserTooltip(periodData.coTeaching.caseManagerId)"
+                @mouseenter="$event.target.classList.add('tooltip-active')"
+                @mouseleave="$event.target.classList.remove('tooltip-active')"
               >
                 {{ getUserInitialLastName(periodData.coTeaching.caseManagerId) }} (C{{ periodData.coTeaching.subject.charAt(0) }})
               </span>
@@ -41,6 +49,10 @@ const props = defineProps({
   getPeriodLabel: {
     type: Function,
     required: false
+  },
+  getUserTooltip: {
+    type: Function,
+    required: true
   }
 })
 

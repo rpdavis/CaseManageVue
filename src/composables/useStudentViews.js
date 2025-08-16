@@ -121,9 +121,10 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
               : [aideData.classAssignment[period]]
             shouldIncludeStudentInPeriod = aideTeacherIds.includes(teacherId)
           }
-        } else if (['admin', 'administrator'].includes(currentRole)) {
-          // Admins can see periods when filtering by specific teacher or paraeducator
+        } else if (['admin', 'administrator', 'admin_504', 'sped_chair'].includes(currentRole)) {
+          // Admin-family roles: allow class view only with specific filters
           if (isTeacherFilter) {
+            // Group by the selected teacher's periods (primary or co-teach)
             shouldIncludeStudentInPeriod = teacherId === currentFilters.teacher || coTeacherId === currentFilters.teacher
           } else if (isParaeducatorFilter) {
             const aideData = aideAssignment.value[currentFilters.paraeducator]
@@ -133,9 +134,12 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
                 : [aideData.classAssignment[period]]
               shouldIncludeStudentInPeriod = aideTeacherIds.includes(teacherId)
             }
+          } else if (currentRole === 'sped_chair' && getCurrentFilters().providerView === 'service_provider') {
+            // SPED chair in SP mode with no teacher filter: behave like a teacher (their own periods)
+            shouldIncludeStudentInPeriod = teacherId === currentUserId || coTeacherId === currentUserId
           } else {
-            // Admin with no specific filter - include all periods (shouldn't normally happen due to isClassViewDisabled)
-            shouldIncludeStudentInPeriod = true
+            // No applicable filter: do not include (class view should be disabled upstream)
+            shouldIncludeStudentInPeriod = false
           }
         } else {
           // Teachers, case managers, service providers, etc. - only show periods they teach/co-teach

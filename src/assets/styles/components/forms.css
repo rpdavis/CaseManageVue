@@ -122,7 +122,7 @@ input[type="file"]::-webkit-file-upload-button {
 
 /* Textarea */
 textarea {
-  min-height: 80px;
+  min-height: 200px;
   resize: vertical;
   line-height: var(--line-height-relaxed);
 }

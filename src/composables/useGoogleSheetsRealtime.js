@@ -1,28 +1,43 @@
 import { ref, watch } from 'vue'
 import { getAuth } from 'firebase/auth'
+import { getGoogleApiConfig } from '@/config/googleApiConfig'
 
 // Google Sheets API configuration
 const SPREADSHEET_ID_KEY = 'casemanage_linked_sheet_id'
 const SHEET_NAME = 'Student Data'
 
+// Get Google API configuration from centralized config
+const googleConfig = getGoogleApiConfig()
+
+// Global state that persists across component instances
+const globalAuthState = {
+  isInitialized: ref(false),
+  tokenClient: ref(null),
+  accessToken: ref(''),
+  tokenResolve: null
+}
+
+// Export global auth state for other composables
+export { globalAuthState }
+
 export function useGoogleSheetsRealtime() {
-  const isInitialized = ref(false)
   const linkedSheetId = ref(localStorage.getItem(SPREADSHEET_ID_KEY) || '')
   const linkedSheetUrl = ref('')
   const lastSyncTime = ref(null)
   const syncStatus = ref('idle') // idle, syncing, success, error
   const syncMessage = ref('')
   
-  // Google Sign-In configuration
-  const tokenClient = ref(null)
-  const accessToken = ref('')
-  let tokenResolve = null // Store the resolve function for the token promise
+  // Use global authentication state
+  const isInitialized = globalAuthState.isInitialized
+  const tokenClient = globalAuthState.tokenClient
+  const accessToken = globalAuthState.accessToken
   
   // Initialize Google Identity Services (new OAuth approach)
   const initializeGoogleAuth = () => {
     return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if (window.google?.accounts?.oauth2 && window.gapi?.client) {
+      // Check if already initialized with valid token client
+      if (window.google?.accounts?.oauth2 && window.gapi?.client && tokenClient.value) {
+        console.log('🔍 Google Auth already initialized, reusing existing token client')
         resolve()
         return
       }
@@ -31,10 +46,11 @@ export function useGoogleSheetsRealtime() {
       const script = document.createElement('script')
       script.src = 'https://accounts.google.com/gsi/client'
       script.onload = () => {
-        // Initialize the token client
-        tokenClient.value = window.google.accounts.oauth2.initTokenClient({
-          client_id: '756483333257-kh1cv865e0buv0cv9g0v1h7ghq7s0e70.apps.googleusercontent.com',
-          scope: 'https://www.googleapis.com/auth/spreadsheets',
+        // Initialize the token client only if it doesn't exist
+        if (!tokenClient.value) {
+          tokenClient.value = window.google.accounts.oauth2.initTokenClient({
+          client_id: googleConfig.clientId,
+          scope: googleConfig.scope,
           callback: (response) => {
             if (response.access_token) {
               accessToken.value = response.access_token
@@ -42,19 +58,20 @@ export function useGoogleSheetsRealtime() {
               // Set the token for gapi client
               window.gapi.client.setToken({ access_token: response.access_token })
               // Resolve the token promise if it exists
-              if (tokenResolve) {
-                tokenResolve(response)
-                tokenResolve = null
+              if (globalAuthState.tokenResolve) {
+                globalAuthState.tokenResolve(response)
+                globalAuthState.tokenResolve = null
               }
             } else {
               console.error('Failed to get access token')
-              if (tokenResolve) {
-                tokenResolve(null)
-                tokenResolve = null
+              if (globalAuthState.tokenResolve) {
+                globalAuthState.tokenResolve(null)
+                globalAuthState.tokenResolve = null
               }
             }
           },
         })
+        }
         
         // Load Google API client library
         const gapiScript = document.createElement('script')
@@ -62,8 +79,8 @@ export function useGoogleSheetsRealtime() {
         gapiScript.onload = () => {
           window.gapi.load('client', async () => {
             await window.gapi.client.init({
-              apiKey: 'AIzaSyDx1jbQT-FzgzjASFqVA2kbAHWJ_TeUzdY',
-              discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+              apiKey: googleConfig.apiKey,
+              discoveryDocs: googleConfig.discoveryDocs,
             })
             resolve()
           })
@@ -99,11 +116,11 @@ export function useGoogleSheetsRealtime() {
     // Only request new token if we don't have one or it's invalid
     return new Promise((resolve, reject) => {
       // Store the resolve function
-      tokenResolve = resolve
+      globalAuthState.tokenResolve = resolve
       
       // Set a timeout to prevent hanging
       const timeout = setTimeout(() => {
-        tokenResolve = null
+        globalAuthState.tokenResolve = null
         reject(new Error('Token request timed out'))
       }, 30000) // 30 second timeout
       
@@ -117,15 +134,15 @@ export function useGoogleSheetsRealtime() {
           accessToken.value = response.access_token
           isInitialized.value = true
           window.gapi.client.setToken({ access_token: response.access_token })
-          if (tokenResolve) {
-            tokenResolve(response)
-            tokenResolve = null
+          if (globalAuthState.tokenResolve) {
+            globalAuthState.tokenResolve(response)
+            globalAuthState.tokenResolve = null
           }
         } else {
           console.error('Failed to get access token:', response)
-          if (tokenResolve) {
-            tokenResolve(null)
-            tokenResolve = null
+          if (globalAuthState.tokenResolve) {
+            globalAuthState.tokenResolve(null)
+            globalAuthState.tokenResolve = null
           }
         }
       }

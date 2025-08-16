@@ -32,7 +32,7 @@
             Role:
             <select v-model="singleUser.role" required>
               <option value="" disabled>Select role...</option>
-              <option v-for="role in validRoles" :key="role" :value="role">
+              <option v-for="role in sortedValidRoles" :key="role" :value="role">
                 {{ role }}
               </option>
             </select>
@@ -53,6 +53,18 @@
           <label>
             Aeries ID:
             <input type="text" v-model="singleUser.aeriesId" placeholder="Optional Aeries Teacher ID" />
+          </label>
+        </div>
+        <div>
+          <label>
+            Room:
+            <input type="text" v-model="singleUser.rm" placeholder="Room number (e.g., 101, A-23)" />
+          </label>
+        </div>
+        <div>
+          <label>
+            Extension:
+            <input type="text" v-model="singleUser.ext" placeholder="Phone extension (e.g., 1234)" />
           </label>
         </div>
         <button type="submit">Add User</button>
@@ -92,6 +104,8 @@
                 <th>Role</th>
                 <th>Provider</th>
                 <th>AeriesID</th>
+                <th>Room</th>
+                <th>Extension</th>
               </tr>
             </thead>
             <tbody>
@@ -101,6 +115,8 @@
                 <td><span class="role-badge teacher">teacher</span></td>
                 <td></td>
                 <td>123456</td>
+                <td>A-101</td>
+                <td>1234</td>
               </tr>
                              <tr>
                  <td>Jane Doe</td>
@@ -108,6 +124,8 @@
                  <td><span class="role-badge service-provider">service_provider</span></td>
                  <td><span class="provider-badge">SLP</span></td>
                  <td></td>
+                 <td>B-205</td>
+                 <td>5678</td>
                </tr>
               <tr>
                 <td>Bob Johnson</td>
@@ -115,6 +133,8 @@
                 <td><span class="role-badge case-manager">case_manager</span></td>
                 <td></td>
                 <td>789012</td>
+                <td>C-150</td>
+                <td>9101</td>
               </tr>
             </tbody>
           </table>
@@ -340,7 +360,9 @@ export default {
       email: '',
       role: '',
       provider: '',
-      aeriesId: ''
+      aeriesId: '',
+      rm: '',
+      ext: ''
     })
 
     const selectedFile = ref(null)
@@ -351,6 +373,11 @@ export default {
     const validRoles = VALID_ROLES
 
     const { appSettings, loadAppSettings } = useAppSettings()
+
+    // Sorted roles for dropdown (alphabetical order)
+    const sortedValidRoles = computed(() => {
+      return [...VALID_ROLES].sort()
+    })
 
     const providerOptions = computed(() => {
       if (appSettings && appSettings.value && appSettings.value.serviceProviders) {
@@ -370,9 +397,9 @@ export default {
           { name: 'Health/Nursing Services', abbreviation: 'HN' },
           { name: 'Social Work Services', abbreviation: 'SW' }
         ]
-        return appSettings.value.serviceProviders.map(abbr =>
-          DEFAULT_SERVICE_PROVIDERS.find(p => p.abbreviation === abbr) || { name: abbr, abbreviation: abbr }
-        )
+        return appSettings.value.serviceProviders
+          .map(abbr => DEFAULT_SERVICE_PROVIDERS.find(p => p.abbreviation === abbr) || { name: abbr, abbreviation: abbr })
+          .sort((a, b) => a.name.localeCompare(b.name))
       }
       return []
     })
@@ -386,7 +413,7 @@ export default {
       }, 5000)
     }
 
-    const createUserInFirestore = async (name, email, role, provider, aeriesId) => {
+    const createUserInFirestore = async (name, email, role, provider, aeriesId, rm, ext) => {
       try {
         const userData = {
           name: name,
@@ -394,6 +421,8 @@ export default {
           role: role,
           provider: provider,
           aeriesId: aeriesId,
+          rm: rm,
+          ext: ext,
           createdAt: new Date(),
           status: 'active'
         }
@@ -406,7 +435,9 @@ export default {
             email: email,
             role: role,
             provider: provider,
-            aeriesId: aeriesId
+            aeriesId: aeriesId,
+            rm: rm,
+            ext: ext
           },
           method: 'firestore_direct'
         })
@@ -416,7 +447,7 @@ export default {
         // Log creation failure
         await auditLogger.logUserManagement('unknown', 'create_failed', {
           error: error.message,
-          attemptedData: { name, email, role, provider, aeriesId },
+          attemptedData: { name, email, role, provider, aeriesId, rm, ext },
           method: 'firestore_direct'
         })
         
@@ -424,14 +455,14 @@ export default {
       }
     }
 
-    const addUserToFirestore = async (name, email, role, provider, aeriesId) => {
+    const addUserToFirestore = async (name, email, role, provider, aeriesId, rm, ext) => {
       try {
         try {
-          await addUserWithRoleCallable({ name, email, role, provider, aeriesId })
+          await addUserWithRoleCallable({ name, email, role, provider, aeriesId, rm, ext })
           
           // Log successful user creation via cloud function
           await auditLogger.logUserManagement('cloud_function_user', 'create', {
-            userData: { name, email, role, provider, aeriesId },
+            userData: { name, email, role, provider, aeriesId, rm, ext },
             method: 'cloud_function'
           })
           
@@ -445,7 +476,7 @@ export default {
             
             // Log existing user attempt
             await auditLogger.logUserManagement('existing_user', 'create_skipped', {
-              userData: { name, email, role, provider, aeriesId },
+              userData: { name, email, role, provider, aeriesId, rm, ext },
               reason: 'user_already_exists',
               method: 'cloud_function'
             })
@@ -454,14 +485,14 @@ export default {
           }
           
           // For other errors, try creating in Firestore only
-          await createUserInFirestore(name, email, role, provider, aeriesId)
+          await createUserInFirestore(name, email, role, provider, aeriesId, rm, ext)
           return { success: true, method: 'firestore' }
         }
       } catch (error) {
         // Log overall creation failure
         await auditLogger.logUserManagement('unknown', 'create_failed', {
           error: error.message,
-          attemptedData: { name, email, role, provider, aeriesId },
+          attemptedData: { name, email, role, provider, aeriesId, rm, ext },
           method: 'addUserToFirestore'
         })
         
@@ -488,7 +519,7 @@ export default {
       }
       
       // Security threat detection
-      const textFields = ['name', 'email', 'aeriesId']
+      const textFields = ['name', 'email', 'aeriesId', 'rm', 'ext']
       for (const field of textFields) {
         if (sanitizedData[field]) {
           const securityCheck = checkSecurityThreats(sanitizedData[field])
@@ -507,7 +538,9 @@ export default {
         singleUser.email,
         singleUser.role,
         singleUser.provider,
-        singleUser.aeriesId
+        singleUser.aeriesId,
+        singleUser.rm,
+        singleUser.ext
       )
       if (result.success) {
         showStatus(`User ${singleUser.name} added successfully!`)
@@ -516,6 +549,8 @@ export default {
         singleUser.role = ''
         singleUser.provider = ''
         singleUser.aeriesId = ''
+        singleUser.rm = ''
+        singleUser.ext = ''
       } else {
         showStatus(`Error adding user: ${result.error}`, true)
       }
@@ -609,7 +644,7 @@ export default {
             }
 
             let startIndex = 0
-            const colIndex = { name: 0, email: 1, role: 2, provider: 3, aeriesId: 4 }
+            const colIndex = { name: 0, email: 1, role: 2, provider: 3, aeriesId: 4, rm: 5, ext: 6 }
             const firstLineCols = parseCSVLine(lines[0])
             const headerDetected = firstLineCols.map(h => h.toLowerCase())
               .some(h => h.includes('name') || h.includes('email') || h.includes('role'))
@@ -622,6 +657,8 @@ export default {
                 if (headerLC === 'role') colIndex.role = idx
                 if (headerLC === 'provider' || headerLC === 'providertype') colIndex.provider = idx
                 if (headerLC === 'aeriesid' || headerLC === 'aeries_id' || headerLC === 'teacherid') colIndex.aeriesId = idx
+                if (headerLC === 'rm' || headerLC === 'room') colIndex.rm = idx
+                if (headerLC === 'ext' || headerLC === 'extension') colIndex.ext = idx
               })
               startIndex = 1
             }
@@ -639,6 +676,8 @@ export default {
               const role = (parts[colIndex.role] || '').trim()
               const provider = (parts[colIndex.provider] || '').trim()
               const aeriesId = (parts[colIndex.aeriesId] || '').trim()
+              const rm = (parts[colIndex.rm] || '').trim()
+              const ext = (parts[colIndex.ext] || '').trim()
 
               // Remove quotes from values
               const cleanName = name.replace(/^"|"$/g, '')
@@ -646,6 +685,8 @@ export default {
               const cleanRole = role.replace(/^"|"$/g, '')
               const cleanProvider = provider.replace(/^"|"$/g, '')
               const cleanAeriesId = aeriesId.replace(/^"|"$/g, '')
+              const cleanRm = rm.replace(/^"|"$/g, '')
+              const cleanExt = ext.replace(/^"|"$/g, '')
 
               if (!cleanName || !cleanEmail || !cleanRole) {
                 errorMessages.push(`Line ${i + 1}: Missing name, email, or role.`)
@@ -657,7 +698,7 @@ export default {
                 continue
               }
 
-              const result = await addUserToFirestore(cleanName, cleanEmail, cleanRole, cleanProvider, cleanAeriesId)
+              const result = await addUserToFirestore(cleanName, cleanEmail, cleanRole, cleanProvider, cleanAeriesId, cleanRm, cleanExt)
               if (result.success) {
                 successCount++
                 if (result.method === 'already-exists') {
@@ -713,7 +754,7 @@ export default {
 
             for (let index = 0; index < rows.length; index++) {
               const row = rows[index]
-              let name = '', email = '', role = '', provider = '', aeriesId = ''
+              let name = '', email = '', role = '', provider = '', aeriesId = '', rm = '', ext = ''
 
               for (const key in row) {
                 const keyLC = key.toLowerCase()
@@ -723,6 +764,8 @@ export default {
                 else if (keyLC === 'role' && !role) role = value
                 else if ((keyLC === 'provider' || keyLC === 'providertype') && !provider) provider = value
                 else if ((keyLC === 'aeriesid' || keyLC === 'aeries_id' || keyLC === 'teacherid') && !aeriesId) aeriesId = value
+                else if ((keyLC === 'rm' || keyLC === 'room') && !rm) rm = value
+                else if ((keyLC === 'ext' || keyLC === 'extension') && !ext) ext = value
               }
 
               // Fallback to column order if field names not found
@@ -732,6 +775,8 @@ export default {
               if (!role && rowValues[2]) role = rowValues[2]
               if (!provider && rowValues[3]) provider = rowValues[3]
               if (!aeriesId && rowValues[4]) aeriesId = rowValues[4]
+              if (!rm && rowValues[5]) rm = rowValues[5]
+              if (!ext && rowValues[6]) ext = rowValues[6]
 
               if (!name || !email || !role) {
                 errorMessages.push(`Row ${index + 1}: Missing name, email, or role.`)
@@ -743,7 +788,7 @@ export default {
                 continue
               }
 
-              const result = await addUserToFirestore(name, email, role, provider, aeriesId)
+              const result = await addUserToFirestore(name, email, role, provider, aeriesId, rm, ext)
               if (result.success) {
                 successCount++
                 if (result.method === 'already-exists') {
@@ -780,6 +825,7 @@ export default {
     return {
       singleUser,
       validRoles,
+      sortedValidRoles,
       providerOptions,
       addSingleUser,
       selectedFile,

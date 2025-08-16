@@ -1,11 +1,11 @@
 <template>
-  <td>
+  <td class="service-column">
     <template v-if="getClassServices(student).length > 0 || getOtherServices(student).length > 0 || hasServiceProviders(student)">
       <div v-if="getClassServices(student).length > 0" class="services-section">
         <strong>Class Services:</strong>
         <div class="services-container">
           <span v-for="service in getClassServices(student)" :key="service" class="service-item">
-            {{ service }}
+            {{ service.startsWith('Other: ') ? service.replace('Other: ', '') : service }}
           </span>
         </div>
       </div>

@@ -13,7 +13,7 @@
               class="teacher-select"
             >
             <option value="">--</option>
-            <option v-for="teacher in userRoles.teachers" :key="teacher.id" :value="teacher.id">
+            <option v-for="teacher in sortedTeachers" :key="teacher.id" :value="teacher.id">
               {{ teacher.name || teacher.email || teacher.id }}
             </option>
           </select>
@@ -100,6 +100,20 @@ const props = defineProps({
 // Period labels composable
 const { getLabel } = usePeriodLabels()
 
+// Sorted teachers for dropdown (by last name)
+const sortedTeachers = computed(() => {
+  const teachers = props.userRoles.teachers || []
+  return teachers.sort((a, b) => {
+    // Extract last names for sorting
+    const getLastName = (user) => {
+      const fullName = user.name || user.email || user.id
+      const nameParts = fullName.split(' ')
+      return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+    }
+    return getLastName(a).localeCompare(getLastName(b))
+  })
+})
+
 // Available case managers (filter to only those with case_manager role)
 const availableCaseManagers = computed(() => {
   const caseManagers = props.userRoles.caseManagers || []
@@ -109,7 +123,15 @@ const availableCaseManagers = computed(() => {
              cm.role === 'admin_504' || cm.role === 'administrator_504_CM' ||
      cm.role === 'sped_chair' ||
      (cm.roles && cm.roles.includes('case_manager')))
-  )
+  ).sort((a, b) => {
+    // Extract last names for sorting
+    const getLastName = (user) => {
+      const fullName = user.name || user.email || user.id
+      const nameParts = fullName.split(' ')
+      return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+    }
+    return getLastName(a).localeCompare(getLastName(b))
+  })
 })
 
 // Co-teach subjects from app settings (only from Co-teach class service)
@@ -168,12 +190,23 @@ const setTeacherValue = (period, teacherId) => {
     })
   } else {
     // Simple string assignment for non-co-teaching periods
-    props.form.schedule[period] = teacherId
-    
-    debugProcess('SET_TEACHER_SIMPLE', {
-      period,
-      newValue: props.form.schedule[period]
-    })
+    if (teacherId && teacherId.trim() !== '' && teacherId.trim() !== '--') {
+      // Set the teacher ID if it's not empty
+      props.form.schedule[period] = teacherId
+      
+      debugProcess('SET_TEACHER_SIMPLE', {
+        period,
+        newValue: props.form.schedule[period]
+      })
+    } else {
+      // Remove the period entirely if teacher is cleared
+      delete props.form.schedule[period]
+      
+      debugProcess('CLEAR_TEACHER', {
+        period,
+        action: 'deleted_period_key'
+      })
+    }
   }
 }
 

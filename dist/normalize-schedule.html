@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Normalization Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        .button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 5px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+        .progress {
+            background-color: #e9ecef;
+            border-radius: 5px;
+            height: 20px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            background-color: #28a745;
+            height: 100%;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Schedule Period Normalization Tool</h1>
+        
+        <div class="warning">
+            <strong>⚠️ Important:</strong> This tool will normalize all student schedule periods to use numeric format (1-7). 
+            It will merge co-teaching data from string periods (P1, P2, etc.) into numeric periods. 
+            This operation cannot be undone automatically.
+        </div>
+
+        <div>
+            <button id="startBtn" class="button">Start Normalization</button>
+            <button id="clearBtn" class="button" style="background-color: #6c757d;">Clear Log</button>
+        </div>
+
+        <div class="progress">
+            <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <div id="progressText">Ready to start...</div>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+        import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDx1jbQT-FzgzjASFqVA2kbAHWJ_TeUzdY",
+            authDomain: "casemanagevue-jepson-prod.firebaseapp.com",
+            projectId: "casemanagevue-jepson-prod",
+            storageBucket: "casemanagevue-jepson-prod.firebasestorage.app",
+            messagingSenderId: "756483333257",
+            appId: "1:756483333257:web:694e2ad2415b7886563a58",
+            measurementId: "G-YBRDQX9NFR"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const logDiv = document.getElementById('log');
+
+        // Period mapping from various formats to numeric
+        const periodMap = {
+            '1': 1, 'P1': 1,
+            '2': 2, 'P2': 2,
+            '3': 3, 'P3': 3,
+            '4': 4, 'P4': 4,
+            '5': 5, 'P5': 5,
+            '6': 6, 'P6': 6,
+            '7': 7, 'SH': 7, 'F': 7
+        };
+
+        // Logging function
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Function to normalize schedule periods
+        function normalizeSchedule(rawSchedule) {
+            if (!rawSchedule || typeof rawSchedule !== 'object') return {};
+            
+            const normalized = {};
+            
+            Object.entries(rawSchedule).forEach(([key, value]) => {
+                const numericPeriod = periodMap[key];
+                if (numericPeriod && value) {
+                    if (normalized[numericPeriod]) {
+                        if (typeof normalized[numericPeriod] === 'string' && typeof value === 'object') {
+                            normalized[numericPeriod] = value;
+                        } else if (typeof normalized[numericPeriod] === 'object' && typeof value === 'object') {
+                            if (value.coTeaching && !normalized[numericPeriod].coTeaching) {
+                                normalized[numericPeriod] = value;
+                            }
+                        }
+                    } else {
+                        normalized[numericPeriod] = value;
+                    }
+                }
+            });
+            
+            return normalized;
+        }
+
+        // Main normalization function
+        async function normalizeAllStudentSchedules() {
+            try {
+                log('🔄 Starting schedule normalization...');
+                startBtn.disabled = true;
+                
+                // Get all students
+                const studentsSnapshot = await getDocs(collection(db, 'students'));
+                const students = studentsSnapshot.docs;
+                
+                log(`📚 Found ${students.length} students to process`);
+                
+                let processedCount = 0;
+                let updatedCount = 0;
+                
+                for (const studentDoc of students) {
+                    const studentData = studentDoc.data();
+                    const studentId = studentDoc.id;
+                    
+                    processedCount++;
+                    
+                    // Update progress
+                    const progress = (processedCount / students.length) * 100;
+                    progressBar.style.width = `${progress}%`;
+                    progressText.textContent = `Progress: ${processedCount}/${students.length} processed, ${updatedCount} updated`;
+                    
+                    // Check if student has schedule data
+                    if (studentData.app?.schedule?.periods) {
+                        const rawSchedule = studentData.app.schedule.periods;
+                        const normalizedSchedule = normalizeSchedule(rawSchedule);
+                        
+                        // Check if normalization made changes
+                        const rawKeys = Object.keys(rawSchedule).sort();
+                        const normalizedKeys = Object.keys(normalizedSchedule).map(k => String(k)).sort();
+                        
+                        const hasChanges = JSON.stringify(rawKeys) !== JSON.stringify(normalizedKeys) ||
+                                          JSON.stringify(rawSchedule) !== JSON.stringify(normalizedSchedule);
+                        
+                        if (hasChanges) {
+                            log(`📝 Updating student ${studentId}:`);
+                            log(`   Before: ${JSON.stringify(rawSchedule)}`);
+                            log(`   After:  ${JSON.stringify(normalizedSchedule)}`);
+                            
+                            // Update the student document
+                            await updateDoc(doc(db, 'students', studentId), {
+                                'app.schedule.periods': normalizedSchedule
+                            });
+                            
+                            updatedCount++;
+                        }
+                    }
+                    
+                    // Small delay to prevent overwhelming Firebase
+                    if (processedCount % 10 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
+                
+                log('✅ Schedule normalization complete!');
+                log(`📊 Final stats: ${processedCount} processed, ${updatedCount} updated`);
+                progressText.textContent = `Complete! ${processedCount} processed, ${updatedCount} updated`;
+                
+            } catch (error) {
+                log(`❌ Error during normalization: ${error.message}`);
+                console.error('Error:', error);
+            } finally {
+                startBtn.disabled = false;
+            }
+        }
+
+        // Check authentication
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                log(`✅ Authenticated as: ${user.email}`);
+                startBtn.disabled = false;
+            } else {
+                log('❌ Not authenticated. Please log in to the main app first.');
+                startBtn.disabled = true;
+            }
+        });
+
+        // Event listeners
+        startBtn.addEventListener('click', normalizeAllStudentSchedules);
+        clearBtn.addEventListener('click', () => {
+            logDiv.innerHTML = '';
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Ready to start...';
+        });
+
+        // Initial log
+        log('🔧 Schedule Normalization Tool loaded');
+        log('⚠️ Make sure you are logged in to the main app first');
+    </script>
+</body>
+</html> 

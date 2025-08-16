@@ -59,8 +59,8 @@ export function useUnifiedRoleView(studentData, filterData) {
     })
 
     // Special handling for roles that use database-level filtering (Pattern 1)
-    // Paraeducators and teachers get their students from database queries - no additional filtering needed
-    if (role === 'paraeducator' || role === 'teacher') {
+    // Paraeducators, teachers, and service providers get their students from database queries - no additional filtering needed
+    if (role === 'paraeducator' || role === 'teacher' || role === 'service_provider') {
       console.log(`🔍 ${role.toUpperCase()} ROLE VIEW: Received ${baseStudents.length} students from database`)
       console.log(`🔍 ${role.toUpperCase()} ROLE VIEW: Student names:`, baseStudents.map(s =>
         `${s.app?.studentData?.firstName || 'Unknown'} ${s.app?.studentData?.lastName || 'Unknown'}`
@@ -204,6 +204,20 @@ export function useUnifiedRoleView(studentData, filterData) {
   // ─── CLASS VIEW GROUPING ────────────────────────────────────────────────────
   const studentsByPeriod = computed(() => {
     if (!currentUserId.value) return {}
+    
+    // If a specific teacher is selected in filters, group by that teacher's periods
+    const selectedTeacher = filterData.currentFilters.teacher
+    if (selectedTeacher && selectedTeacher !== 'all') {
+      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedTeacher)
+    }
+    
+    // If a specific paraeducator is selected, group by that paraeducator's periods
+    const selectedParaeducator = filterData.currentFilters.paraeducator
+    if (selectedParaeducator && selectedParaeducator !== 'all') {
+      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedParaeducator)
+    }
+    
+    // Otherwise, group by current user's periods
     return baseView.groupStudentsByPeriod(visibleStudents.value, currentUserId.value)
   })
 

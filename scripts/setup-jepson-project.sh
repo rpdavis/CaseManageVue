@@ -53,3 +53,5 @@ echo "2. Enable Authentication, Firestore, Functions, Hosting, Storage"
 echo "3. Configure OAuth consent screen in Google Cloud Console"
 echo "4. Get the Firebase config values and update src/firebase.js"
 
+
+

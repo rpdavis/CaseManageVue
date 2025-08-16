@@ -1,5 +1,5 @@
 <template>
-  <td class="instruction-cell" :class="{ 'with-flag': getFlagValue(student, flagType) }">
+  <td :class="[fieldName + '-column', 'instruction-cell', { 'with-flag': getFlagValue(student, flagType) }]">
     <div v-if="getFlagValue(student, flagType)" class="flag-overlay" :class="flagClass">
       {{ flagText }}
     </div>

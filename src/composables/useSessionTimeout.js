@@ -17,9 +17,9 @@ class SessionTimeoutManager {
     this.router = null
     this.unsubscribeSettings = null
     
-    // Activity events to monitor
+    // Activity events to monitor (removed mousemove for performance)
     this.activityEvents = [
-      'mousedown', 'mousemove', 'keypress', 'scroll', 
+      'mousedown', 'keypress', 'scroll', 
       'touchstart', 'click', 'keydown'
     ]
     
@@ -42,11 +42,13 @@ class SessionTimeoutManager {
   setupAuthWatcher() {
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        // Start timeout when user logs in
+        console.log('🔧 User logged in, starting session timeout system')
+        // Start timeout when user logs in - longer delay to ensure settings are loaded
         setTimeout(() => {
           this.resetTimeout()
-        }, 1000) // Small delay to ensure settings are loaded
+        }, 2000) // Increased delay to ensure settings listener is established
       } else {
+        console.log('🔧 User logged out, clearing session timeouts')
         // Clear timeouts when user logs out
         this.clearTimeouts()
         this.hideWarning()
@@ -58,26 +60,41 @@ class SessionTimeoutManager {
     try {
       const settingsRef = doc(db, 'app_settings', 'security')
       
-      // Listen for real-time changes to security settings
+      // Use real-time listener to get updates when settings change in admin panel
       this.unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
         if (doc.exists()) {
           const data = doc.data()
-          const wasEnabled = this.isEnabled.value
-          this.isEnabled.value = data.sessionTimeoutEnabled || false
-          this.timeoutMinutes.value = data.sessionTimeoutMinutes || 30
+          const newEnabled = data.sessionTimeoutEnabled || false
+          const newMinutes = data.sessionTimeoutMinutes || 30
+          
+          console.log(`🔧 Session timeout settings updated: enabled=${newEnabled}, timeout=${newMinutes}min`)
+          
+          // Update local values
+          this.isEnabled.value = newEnabled
+          this.timeoutMinutes.value = newMinutes
           
           // Restart timeout with new settings if user is logged in
           if (auth.currentUser) {
             this.resetTimeout()
           }
         } else {
-          // No settings document exists, create default
+          // No settings document exists, use defaults
+          console.log('🔧 No session timeout settings found, using defaults')
           this.isEnabled.value = false
           this.timeoutMinutes.value = 30
         }
+      }, (error) => {
+        console.error('Failed to load session timeout settings:', error)
+        // Use defaults on error
+        this.isEnabled.value = false
+        this.timeoutMinutes.value = 30
       })
+      
     } catch (error) {
-      console.error('Failed to load session timeout settings:', error)
+      console.error('Failed to setup session timeout settings listener:', error)
+      // Use defaults on error
+      this.isEnabled.value = false
+      this.timeoutMinutes.value = 30
     }
   }
 
@@ -90,6 +107,17 @@ class SessionTimeoutManager {
         updatedAt: new Date().toISOString(),
         updatedBy: auth.currentUser?.uid
       }, { merge: true })
+      
+      // Immediately update local values and restart timeout
+      this.isEnabled.value = enabled
+      this.timeoutMinutes.value = minutes
+      
+      console.log(`✅ Session timeout settings updated: enabled=${enabled}, timeout=${minutes}min`)
+      
+      // Restart timeout with new settings if user is logged in
+      if (auth.currentUser) {
+        this.resetTimeout()
+      }
       
     } catch (error) {
       console.error('Failed to update session timeout settings:', error)
@@ -105,38 +133,31 @@ class SessionTimeoutManager {
   }
 
   handleActivity() {
-    
-    if (!this.isEnabled.value) return
+    if (!this.isEnabled.value || !auth.currentUser) return
     
     const now = Date.now()
     
-    // Throttle activity handling to prevent infinite loops
-    // Only reset timeout if it's been more than 30 seconds since last reset
-    if (now - this.lastActivity < 30000) {
+    // Reduced throttling - only every 10 seconds for more responsive timeout resets
+    if (now - this.lastActivity < 10000) {
       this.lastActivity = now
       return
     }
     
     this.lastActivity = now
     
-    // Only extend session if warning is showing or it's been a while
+    // Always reset timeout on activity
+    console.log('🔄 Activity detected - resetting session timeout')
+    this.resetTimeout()
+    
+    // Hide warning if showing
     if (this.showWarning.value) {
       this.hideWarning()
-      this.resetTimeout()
-    } else {
-      // Just update last activity without resetting timeout constantly
-      // This prevents the infinite loop while still tracking activity
     }
   }
 
   resetTimeout() {
-    console.log('🔒 DEBUG: resetTimeout() called')
-    console.log('🔒 DEBUG: isEnabled.value:', this.isEnabled.value)
-    console.log('🔒 DEBUG: auth.currentUser exists?', !!auth.currentUser)
-    console.log('🔒 DEBUG: auth.currentUser uid:', auth.currentUser?.uid)
-    
     if (!this.isEnabled.value || !auth.currentUser) {
-      console.log('🔒 DEBUG: resetTimeout() early return - not enabled or no user')
+      console.log('⚠️ Session timeout disabled or no user - skipping reset')
       return
     }
     
@@ -145,26 +166,19 @@ class SessionTimeoutManager {
     
     const now = Date.now()
     const timeoutMs = Math.round(this.timeoutMinutes.value * 60 * 1000)
-    const warningMs = Math.max(1000, timeoutMs - (1 * 60 * 1000)) // Show warning 1 minute before timeout for debugging
+    const warningMs = Math.max(5000, timeoutMs - (2 * 60 * 1000)) // Show warning 2 minutes before timeout
     
-    // Reduce console spam - only log every 5 minutes or when warning shows
-    const shouldLog = !this.lastLogTime || (now - this.lastLogTime > 300000) || this.showWarning.value
-    if (shouldLog) {
-      console.log(`🔒 Session timeout reset: ${this.timeoutMinutes.value} minutes (${timeoutMs}ms), warning in ${warningMs}ms`)
-      this.lastLogTime = now
-    }
+    console.log(`🔒 Session timeout reset: ${this.timeoutMinutes.value} minutes (${timeoutMs}ms), warning in ${warningMs}ms`)
     
-    // Set warning timeout - always set if timeout is more than 10 seconds
-    if (timeoutMs > 10000) {
-      this.warningTimeoutId = setTimeout(() => {
-        console.log('🚨 Showing session warning')
-        this.showSessionWarning()
-      }, warningMs)
-    }
+    // Set warning timeout
+    this.warningTimeoutId = setTimeout(() => {
+      console.log('🚨 Showing session warning')
+      this.showSessionWarning()
+    }, warningMs)
     
     // Set logout timeout
     this.timeoutId = setTimeout(() => {
-      console.log('⏰ Session timeout triggered')
+      console.log('⏰ Session timeout triggered - logging out user')
       this.handleSessionTimeout()
     }, timeoutMs)
   }
@@ -202,9 +216,6 @@ class SessionTimeoutManager {
   }
 
   async handleSessionTimeout() {
-    console.log('🔒 DEBUG: handleSessionTimeout() called')
-    console.log('🔒 DEBUG: auth.currentUser exists?', !!auth.currentUser)
-    console.log('🔒 DEBUG: auth.currentUser uid:', auth.currentUser?.uid)
     
     console.log('🔒 Handling session timeout')
     
@@ -280,9 +291,10 @@ class SessionTimeoutManager {
       })
     }
     
-    // Unsubscribe from settings changes
+    // Unsubscribe from settings listener
     if (this.unsubscribeSettings) {
       this.unsubscribeSettings()
+      this.unsubscribeSettings = null
     }
   }
 }

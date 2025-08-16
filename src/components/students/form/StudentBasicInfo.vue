@@ -67,7 +67,7 @@
         Case Manager:
         <select v-model="form.caseManagerId">
           <option value="">-- Select Case Manager --</option>
-          <option v-for="cm in userRoles.caseManagers" :key="cm.id" :value="cm.id">
+          <option v-for="cm in sortedCaseManagers" :key="cm.id" :value="cm.id">
             {{ cm.name || cm.email || cm.id }}
           </option>
         </select>
@@ -77,6 +77,8 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+
 // Props
 const props = defineProps({
   form: { type: Object, required: true },
@@ -85,7 +87,19 @@ const props = defineProps({
   userRoles: { type: Object, required: true }
 })
 
-// No local state needed - all data flows through props
+// Sorted case managers for dropdown (by last name)
+const sortedCaseManagers = computed(() => {
+  const caseManagers = props.userRoles.caseManagers || []
+  return caseManagers.sort((a, b) => {
+    // Extract last names for sorting
+    const getLastName = (user) => {
+      const fullName = user.name || user.email || user.id
+      const nameParts = fullName.split(' ')
+      return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+    }
+    return getLastName(a).localeCompare(getLastName(b))
+  })
+})
 </script>
 
 <style scoped>

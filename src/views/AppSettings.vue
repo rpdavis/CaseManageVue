@@ -56,38 +56,27 @@
         </div>
         <div class="class-service-fieldset" v-if="settings.classServices[3] && settings.classServices[3].enabledSubcategories">
           <fieldset>
-            <legend>Directed Studies</legend>
+            <legend>Other</legend>
             <div class="checkbox-inline-group">
-              <label>
-                <input type="checkbox" v-model="settings.classServices[3].enabledSubcategories" value="Directed Studies" />
-                Directed Studies
+              <label v-for="sub in ['FA', 'Directed Studies', 'DS: Reading Intv']" :key="sub">
+                <input type="checkbox" v-model="settings.classServices[3].enabledSubcategories" :value="sub" />
+                {{ sub }}
               </label>
             </div>
           </fieldset>
         </div>
-        <div class="class-service-fieldset" v-if="settings.classServices[4] && settings.classServices[4].enabledSubcategories">
-          <fieldset>
-            <legend>FA</legend>
-            <div class="checkbox-inline-group">
-              <label>
-                <input type="checkbox" v-model="settings.classServices[4].enabledSubcategories" value="FA" />
-                FA
-              </label>
-            </div>
-          </fieldset>
-        </div>
-        <div v-for="(service, sIdx) in settings.classServices.slice(5)" :key="service.name" class="class-service-fieldset">
+        <div v-for="(service, sIdx) in settings.classServices.slice(4)" :key="service.name" class="class-service-fieldset">
           <fieldset>
             <legend>{{ service.name }}
-              <button type="button" @click="removeClassService(sIdx + 5)" title="Remove Service">×</button>
+              <button type="button" @click="removeClassService(sIdx + 4)" title="Remove Service">×</button>
             </legend>
             <div class="checkbox-inline-group">
               <label v-for="(sub, subIdx) in service.subcategories" :key="sub">
                 <input type="checkbox" :checked="true" disabled />
                 {{ sub }}
-                <button type="button" @click="removeSubcategory(sIdx + 5, subIdx)" title="Remove Subcategory">×</button>
+                <button type="button" @click="removeSubcategory(sIdx + 4, subIdx)" title="Remove Subcategory">×</button>
               </label>
-              <button type="button" @click="addSubcategory(sIdx + 5)">+ Add Subcategory</button>
+              <button type="button" @click="addSubcategory(sIdx + 4)">+ Add Subcategory</button>
             </div>
           </fieldset>
         </div>
@@ -137,14 +126,10 @@
           <div class="periods-controls">
             <div class="period-number-control">
               <label>
-                Number of Periods (max 15):
-                <input 
-                  type="number" 
-                  v-model="settings.numPeriods" 
-                  min="1" 
-                  max="15" 
-                  class="period-number-input"
-                />
+                Number of Periods:
+                <select v-model="settings.numPeriods" class="period-number-select">
+                  <option v-for="n in 15" :key="n" :value="n">{{ n }}</option>
+                </select>
               </label>
             </div>
             
@@ -302,7 +287,10 @@ const statusError = ref(false)
 const customServiceProviderName = ref('')
 const customServiceProviderAbbr = ref('')
 
-
+// Variables for adding new class services
+const newServiceName = ref('')
+const newServiceSubcat = ref('')
+const newServiceSubcats = ref([])
 
 // Initialize default settings structure
 const settings = ref({
@@ -310,18 +298,30 @@ const settings = ref({
   classServices: [
     {
       name: 'SDC',
+      subcategories: [...CORE_SUBCATEGORIES],
       enabledSubcategories: [...CORE_SUBCATEGORIES]
     },
     {
       name: 'Co-teach',
+      subcategories: [...CORE_SUBCATEGORIES],
       enabledSubcategories: [...CORE_SUBCATEGORIES]
+    },
+    {
+      name: 'RSP',
+      subcategories: [...CORE_SUBCATEGORIES],
+      enabledSubcategories: [...CORE_SUBCATEGORIES]
+    },
+    {
+      name: 'Other',
+      subcategories: ['FA', 'Directed Studies', 'DS: Reading Intv'],
+      enabledSubcategories: ['FA', 'Directed Studies', 'DS: Reading Intv']
     }
   ],
   serviceProviders: ['SLP', 'OT', 'MH'],
   serviceProvidersDetails: DEFAULT_SERVICE_PROVIDERS,
   customServiceProviders: [],
   numPeriods: 7,
-  periodLabels: ['Per1', 'Per2', 'Per3', 'Per4', 'Per5', 'Per6', 'Per7']
+  periodLabels: ['1', '2', '3', '4', '5', '6', 'sh']
 })
 
 // Enhanced validation functions
@@ -427,6 +427,12 @@ const validateSettingsCopy = (settingsCopy) => {
   }
   
   settingsCopy.numPeriods = sanitizedNumPeriods
+  
+  // Ensure we never save invalid numPeriods
+  if (settingsCopy.numPeriods <= 0) {
+    console.log('🔧 Preventing save of invalid numPeriods, setting to 7')
+    settingsCopy.numPeriods = 7
+  }
 
   // Validate period labels
   for (let i = 0; i < settingsCopy.numPeriods; i++) {
@@ -509,8 +515,6 @@ const allGradesSelected = computed(() => {
   return gradeOptions.every(grade => settings.value.grades.includes(grade.value))
 })
 
-
-
 const toggleAllGrades = (event) => {
   if (event.target.checked) {
     settings.value.grades = gradeOptions.map(g => g.value)
@@ -552,36 +556,72 @@ const removeCustomServiceProvider = (index) => {
   settings.value.customServiceProviders.splice(index, 1)
 }
 
-// Watchers for validation
+// Watchers for validation - FIXED to prevent infinite loops
 watch(() => settings.value.numPeriods, (newVal, oldVal) => {
-  // Prevent infinite loops during save operations
-  if (saveLoading.value || preventWatchers.value) return;
+  // Prevent infinite loops during save operations or loading
+  if (saveLoading.value || preventWatchers.value || loading.value) return;
+  
+  // Only process if value actually changed
+  if (newVal === oldVal) return;
   
   // Sanitize and validate on change
   const sanitizedVal = sanitizeNumeric(newVal, { min: 1, max: 15, decimals: 0 })
   if (sanitizedVal !== null && sanitizedVal !== newVal) {
+    // Temporarily prevent watchers to avoid loops
+    preventWatchers.value = true
     settings.value.numPeriods = sanitizedVal
+    setTimeout(() => { preventWatchers.value = false }, 50)
+    return
   }
 
-  // Ensure period labels array matches number of periods
-  if (settings.value.periodLabels.length < settings.value.numPeriods) {
-    // Add missing labels
-    for (let i = settings.value.periodLabels.length; i < settings.value.numPeriods; i++) {
-      settings.value.periodLabels.push(`Per${i + 1}`)
+  // Only adjust period labels if we have a valid number
+  if (sanitizedVal !== null && sanitizedVal > 0) {
+    const defaultLabels = ['1', '2', '3', '4', '5', '6', 'sh']
+    const currentLabels = [...(settings.value.periodLabels || [])]
+    
+    // Temporarily prevent watchers to avoid loops
+    preventWatchers.value = true
+    
+    // Ensure period labels array matches number of periods
+    if (currentLabels.length < sanitizedVal) {
+      // Add missing labels using defaults
+      for (let i = currentLabels.length; i < sanitizedVal; i++) {
+        currentLabels.push(defaultLabels[i] || `${i + 1}`)
+      }
+      settings.value.periodLabels = currentLabels
+    } else if (currentLabels.length > sanitizedVal) {
+      // Trim excess labels
+      settings.value.periodLabels = currentLabels.slice(0, sanitizedVal)
     }
+    
+    setTimeout(() => { preventWatchers.value = false }, 50)
   }
 })
 
-// Watch period labels for validation
+// Watch period labels for validation - SIMPLIFIED to prevent loops
 watch(() => settings.value.periodLabels, (newLabels, oldLabels) => {
-  // Prevent infinite loops during save operations
-  if (saveLoading.value || preventWatchers.value) return;
+  // Prevent infinite loops during save operations or loading
+  if (saveLoading.value || preventWatchers.value || loading.value) return;
+  
+  // Only process if labels actually changed
+  if (!newLabels || !Array.isArray(newLabels)) return;
+  
+  let needsUpdate = false
+  const updatedLabels = [...newLabels]
   
   newLabels.forEach((label, index) => {
-    if (label && label.length > 3) {
-      settings.value.periodLabels[index] = label.substring(0, 3)
+    if (label && typeof label === 'string' && label.length > 3) {
+      updatedLabels[index] = label.substring(0, 3)
+      needsUpdate = true
     }
   })
+  
+  if (needsUpdate) {
+    // Temporarily prevent watchers to avoid loops
+    preventWatchers.value = true
+    settings.value.periodLabels = updatedLabels
+    setTimeout(() => { preventWatchers.value = false }, 50)
+  }
 }, { deep: true })
 
 // Status message helper
@@ -599,26 +639,52 @@ const loadSettings = async (showMessage = false) => {
   loading.value = true
   try {
     const loadedSettings = await loadAppSettings()
+    
     if (loadedSettings) {
+      // Temporarily disable watchers during merge to prevent loops
+      preventWatchers.value = true
+      
       // Merge with defaults to ensure all properties exist
       settings.value = {
         ...settings.value,
         ...loadedSettings
       }
       
+      // Fix any NaN or invalid values that might cause input errors
+      if (isNaN(settings.value.numPeriods) || settings.value.numPeriods === null || settings.value.numPeriods === undefined || settings.value.numPeriods <= 0) {
+        console.log('🔧 Fixing invalid numPeriods, setting to 7')
+        settings.value.numPeriods = 7
+      }
+      
+      // Ensure periodLabels is an array and has valid values
+      if (!Array.isArray(settings.value.periodLabels)) {
+        settings.value.periodLabels = []
+      }
+      
       // Ensure periodLabels array exists and has correct length
       if (!settings.value.periodLabels || settings.value.periodLabels.length < settings.value.numPeriods) {
-        settings.value.periodLabels = []
+        // Use the correct defaults from the composable: ['1', '2', '3', '4', '5', '6', 'sh']
+        const defaultLabels = ['1', '2', '3', '4', '5', '6', 'sh']
+        const currentLabels = settings.value.periodLabels || []
+        const newLabels = []
+        
         for (let i = 0; i < settings.value.numPeriods; i++) {
-          settings.value.periodLabels[i] = settings.value.periodLabels[i] || `Per${i + 1}`
+          // Use existing label, or default, or fallback
+          newLabels[i] = currentLabels[i] || defaultLabels[i] || `${i + 1}`
         }
+        settings.value.periodLabels = newLabels
       }
+      
+      // Re-enable watchers after merge
+      setTimeout(() => {
+        preventWatchers.value = false
+      }, 100)
       
       if (showMessage) showStatus('Settings loaded successfully')
     }
   } catch (error) {
-    showStatus('Error loading settings', true)
     console.error('Load settings error:', error)
+    showStatus('Error loading settings', true)
   } finally {
     loading.value = false
   }
@@ -701,20 +767,145 @@ const resetSettings = () => {
       classServices: [
         {
           name: 'SDC',
+          subcategories: [...CORE_SUBCATEGORIES],
           enabledSubcategories: [...CORE_SUBCATEGORIES]
         },
         {
           name: 'Co-teach',
+          subcategories: [...CORE_SUBCATEGORIES],
           enabledSubcategories: [...CORE_SUBCATEGORIES]
+        },
+        {
+          name: 'RSP',
+          subcategories: [...CORE_SUBCATEGORIES],
+          enabledSubcategories: [...CORE_SUBCATEGORIES]
+        },
+        {
+          name: 'Other',
+          subcategories: ['FA', 'Directed Studies', 'DS: Reading Intv'],
+          enabledSubcategories: ['FA', 'Directed Studies', 'DS: Reading Intv']
         }
       ],
       serviceProviders: ['SLP', 'OT', 'MH'],
       serviceProvidersDetails: DEFAULT_SERVICE_PROVIDERS,
       customServiceProviders: [],
       numPeriods: 7,
-      periodLabels: ['Per1', 'Per2', 'Per3', 'Per4', 'Per5', 'Per6', 'Per7']
+      periodLabels: ['1', '2', '3', '4', '5', '6', 'sh']
     }
     showStatus('Settings reset to defaults')
+  }
+}
+
+// Functions for adding/removing subcategories and class services
+const addSubcategory = (serviceIndex) => {
+  const newSubcat = prompt('Enter new subcategory name:')
+  if (newSubcat && newSubcat.trim()) {
+    const sanitized = sanitizeString(newSubcat.trim(), {
+      maxLength: 18,
+      removeDangerous: true
+    })
+    
+    if (sanitized) {
+      // Add to the specific service's subcategories
+      if (!settings.value.classServices[serviceIndex]) {
+        settings.value.classServices[serviceIndex] = { name: '', subcategories: [], enabledSubcategories: [] }
+      }
+      
+      if (!settings.value.classServices[serviceIndex].subcategories.includes(sanitized)) {
+        settings.value.classServices[serviceIndex].subcategories.push(sanitized)
+        settings.value.classServices[serviceIndex].enabledSubcategories.push(sanitized)
+        showStatus('Subcategory added successfully')
+      } else {
+        showStatus('Subcategory already exists', true)
+      }
+    }
+  }
+}
+
+const removeSubcategory = (serviceIndex, subcategoryIndex) => {
+  if (confirm('Are you sure you want to remove this subcategory?')) {
+    const service = settings.value.classServices[serviceIndex]
+    const subcatName = service.subcategories[subcategoryIndex]
+    
+    // Remove from subcategories array
+    service.subcategories.splice(subcategoryIndex, 1)
+    
+    // Remove from enabled subcategories array
+    const enabledIndex = service.enabledSubcategories.indexOf(subcatName)
+    if (enabledIndex > -1) {
+      service.enabledSubcategories.splice(enabledIndex, 1)
+    }
+    
+    showStatus('Subcategory removed successfully')
+  }
+}
+
+const addNewServiceSubcat = () => {
+  if (newServiceSubcat.value && newServiceSubcat.value.trim()) {
+    const sanitized = sanitizeString(newServiceSubcat.value.trim(), {
+      maxLength: 18,
+      removeDangerous: true
+    })
+    
+    if (sanitized && !newServiceSubcats.value.includes(sanitized)) {
+      newServiceSubcats.value.push(sanitized)
+      newServiceSubcat.value = ''
+    } else if (newServiceSubcats.value.includes(sanitized)) {
+      showStatus('Subcategory already added', true)
+    }
+  }
+}
+
+const removeNewServiceSubcat = (index) => {
+  newServiceSubcats.value.splice(index, 1)
+}
+
+const addClassService = () => {
+  if (!newServiceName.value || !newServiceName.value.trim()) {
+    showStatus('Please enter a service name', true)
+    return
+  }
+  
+  if (newServiceSubcats.value.length === 0) {
+    showStatus('Please add at least one subcategory', true)
+    return
+  }
+  
+  const sanitizedName = sanitizeString(newServiceName.value.trim(), {
+    maxLength: 18,
+    removeDangerous: true
+  })
+  
+  if (sanitizedName) {
+    // Check if service already exists
+    const existingService = settings.value.classServices.find(service => service.name === sanitizedName)
+    if (existingService) {
+      showStatus('Service with this name already exists', true)
+      return
+    }
+    
+    // Add new service
+    const newService = {
+      name: sanitizedName,
+      subcategories: [...newServiceSubcats.value],
+      enabledSubcategories: [...newServiceSubcats.value]
+    }
+    
+    settings.value.classServices.push(newService)
+    
+    // Clear form
+    newServiceName.value = ''
+    newServiceSubcat.value = ''
+    newServiceSubcats.value = []
+    
+    showStatus('Class service added successfully')
+  }
+}
+
+const removeClassService = (serviceIndex) => {
+  if (confirm('Are you sure you want to remove this class service?')) {
+    settings.value.classServices.splice(serviceIndex, 1)
+    showStatus('Class service removed successfully')
   }
 }
 
@@ -913,12 +1104,14 @@ button:disabled {
   border-radius: 4px;
   font-size: 14px;
 }
-.period-number-input {
+.period-number-select {
   padding: 0.5rem;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
   width: 100px;
+  background: white;
+  cursor: pointer;
 }
 .period-preview {
   margin-top: 1rem;
@@ -1040,252 +1233,5 @@ button:disabled {
 .gmail-api-actions button:disabled {
   background: var(--bg-muted);
   cursor: not-allowed;
-}
-
-/* Domain Validation Settings */
-.domain-validation-settings {
-  padding: 1rem;
-}
-
-.domain-validation-header {
-  margin-bottom: 1.5rem;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.toggle-checkbox {
-  cursor: pointer;
-}
-
-.help-text {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  margin: 0.5rem 0;
-  line-height: 1.4;
-}
-
-.domain-config {
-  margin-top: 1rem;
-  padding: 1rem;
-  background: var(--bg-tertiary);
-  border-radius: var(--border-radius-sm);
-  border: 1px solid var(--border-color);
-}
-
-.domain-options h4 {
-  margin: 0 0 0.5rem 0;
-  color: var(--text-primary);
-}
-
-.domain-item {
-  margin: 1rem 0;
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: var(--border-radius-sm);
-  border: 1px solid var(--border-color);
-}
-
-.domain-header {
-  margin-bottom: 0.5rem;
-}
-
-.domain-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.domain-name {
-  color: var(--text-primary);
-}
-
-.required-badge {
-  background: var(--primary-color);
-  color: white;
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--border-radius-pill);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.domain-config-details {
-  margin-top: 1rem;
-}
-
-.domain-input-group {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.domain-input-group label {
-  font-weight: 500;
-  min-width: 60px;
-}
-
-.domain-input {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-sm);
-  font-family: monospace;
-}
-
-.domain-input.error {
-  border-color: var(--error-color);
-  background: var(--error-bg);
-}
-
-.domain-description {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  margin: 0.5rem 0;
-}
-
-.domain-preview {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: var(--bg-muted);
-  border-radius: var(--border-radius-sm);
-}
-
-.preview-label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-.domain-preview code {
-  background: var(--primary-color);
-  color: white;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--border-radius-sm);
-  font-size: 0.875rem;
-}
-
-.domain-summary {
-  margin: 1.5rem 0;
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: var(--border-radius-sm);
-  border: 1px solid var(--border-color);
-}
-
-.domain-summary h4 {
-  margin: 0 0 0.5rem 0;
-}
-
-.summary-warning {
-  color: var(--warning-color);
-  font-weight: 500;
-}
-
-.summary-info p {
-  margin: 0 0 0.5rem 0;
-}
-
-.domain-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.5rem 0;
-}
-
-.domain-item-summary {
-  padding: 0.25rem 0;
-}
-
-.domain-item-summary code {
-  background: var(--success-color);
-  color: white;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--border-radius-sm);
-  font-size: 0.875rem;
-}
-
-.domain-test {
-  margin: 1.5rem 0;
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: var(--border-radius-sm);
-  border: 1px solid var(--border-color);
-}
-
-.domain-test h4 {
-  margin: 0 0 1rem 0;
-}
-
-.test-input-group {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.test-email-input {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-sm);
-}
-
-.test-button {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: var(--border-radius-sm);
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.test-button:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
-
-.test-button:disabled {
-  background: var(--bg-muted);
-  cursor: not-allowed;
-}
-
-.test-result {
-  padding: 0.75rem;
-  border-radius: var(--border-radius-sm);
-  font-weight: 500;
-  margin-top: 0.5rem;
-}
-
-.test-result.valid {
-  background: var(--success-bg);
-  color: var(--success-color);
-  border: 1px solid var(--success-color);
-}
-
-.test-result.invalid {
-  background: var(--error-bg);
-  color: var(--error-color);
-  border: 1px solid var(--error-color);
-}
-
-.domain-disabled-info {
-  padding: 1rem;
-  background: var(--warning-bg);
-  border: 1px solid var(--warning-color);
-  border-radius: var(--border-radius-sm);
-  margin-top: 1rem;
-}
-
-.info-text {
-  margin: 0;
-  color: var(--warning-dark);
 }
 </style> 

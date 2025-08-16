@@ -241,7 +241,7 @@
 
 /* Instruction Cell */
 .instruction-cell {
-  background: var(--bg-tertiary);
+  
   border-radius: var(--border-radius-sm);
   box-shadow: var(--shadow-sm);
   border-left: 4px solid var(--primary-color);

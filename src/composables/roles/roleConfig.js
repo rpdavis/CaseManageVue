@@ -178,7 +178,7 @@ export const PROVIDER_VIEW_OPTIONS = {
   
   [ROLES.SERVICE_PROVIDER]: [
     { value: 'all', label: 'All' },
-    { value: 'service_provider', label: 'SP' }
+   
   ]
 }
 

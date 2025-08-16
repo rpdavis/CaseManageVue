@@ -59,59 +59,66 @@ export function useStudentData() {
 
   // Get paraeducators for filter dropdown
   const paraeducators = computed(() => {
-    return userList.value?.filter(user => user.role === 'paraeducator') || []
+    return userList.value?.filter(user => user.role === 'paraeducator')
+      .sort((a, b) => {
+        // Extract last names for sorting
+        const getLastName = (user) => {
+          const fullName = user.name || user.email || user.id
+          const nameParts = fullName.split(' ')
+          return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+        }
+        return getLastName(a).localeCompare(getLastName(b))
+      }) || []
+  })
+
+  // Get service providers for filter dropdown
+  const serviceProviders = computed(() => {
+    return userList.value?.filter(user => user.role === 'service_provider')
+      .sort((a, b) => {
+        // Extract last names for sorting
+        const getLastName = (user) => {
+          const fullName = user.name || user.email || user.id
+          const nameParts = fullName.split(' ')
+          return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+        }
+        return getLastName(a).localeCompare(getLastName(b))
+      }) || []
+  })
+
+  // Get case managers with student counts for filter dropdown (preserves fallback logic)
+  const caseManagersWithCounts = computed(() => {
+    if (!students.value?.length || !caseManagers.value?.length) return []
+    
+    return caseManagers.value.map(cm => {
+      const studentCount = students.value.filter(student => 
+        getCaseManagerId(student) === cm.id
+      ).length
+      
+      // Keep the same fallback logic as the original template
+      const displayName = cm.name || cm.email || cm.id
+      
+      return {
+        ...cm,
+        displayName: `${displayName} (${studentCount})`,
+        count: studentCount
+      }
+    }).sort((a, b) => a.displayName.localeCompare(b.displayName))
   })
 
   // Data fetching with role-based security
   const fetchData = async () => {
-    console.log('🔍 useStudentData: fetchData() called')
     isLoading.value = true
     error.value = null
     
     try {
-      console.log('🔍 useStudentData: About to fetchUsers()...')
       // First, fetch users (needed for role-based student queries)
       await fetchUsers()
-      console.log('🔍 useStudentData: fetchUsers() completed')
-      
-      // Debug: Check if users are accessible
-      console.log('🔍 useStudentData: Users available in userMap:', Object.keys(userMapObj.value).length)
-      console.log('🔍 useStudentData: Users available in userList:', userList.value?.length || 0)
-      if (currentUser.value?.role === 'paraeducator') {
-        console.log('🔍 PARAEDUCATOR DEBUG: Can access user data:', {
-          userMapKeys: Object.keys(userMapObj.value).slice(0, 5),
-          userListSample: userList.value?.slice(0, 3).map(u => ({ id: u.id, name: u.name, role: u.role }))
-        })
-      }
       
       // Then fetch students based on user role (SECURITY: Database-level filtering)
       const user = currentUser.value
-      console.log('🔍 useStudentData: Checking user for loadStudents call:', user)
-      
-      if (user?.role === 'paraeducator') {
-        console.log('🔍 PARAEDUCATOR DEBUG: Full user object:', {
-          uid: user.uid,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          customClaims: user.customClaims,
-          fullUser: user
-        })
-      }
       
       if (user) {
-        console.log('🔒 Security: Fetching students for user role:', user.role, 'userId:', user.uid)
-        console.log('🔍 useStudentData: About to call loadStudents()...')
         const roleBasedStudents = await loadStudents()
-        console.log('🔍 useStudentData: loadStudents() returned:', roleBasedStudents.length, 'students')
-        if (user.role === 'paraeducator') {
-          console.log('🔍 PARAEDUCATOR DEBUG: Student details:', roleBasedStudents.map(s => ({
-            id: s.id,
-            firstName: s.app?.studentData?.firstName,
-            lastName: s.app?.studentData?.lastName,
-            fullData: s
-          })))
-        }
         setStudents(roleBasedStudents)
         
         // Run security test to verify access control
@@ -120,7 +127,6 @@ export function useStudentData() {
           console.error('🚨 SECURITY VIOLATION DETECTED:', securityTest.violations)
         }
       } else {
-        console.log('🔒 Security: No user found - setting empty student array')
         setStudents([])
       }
       
@@ -131,15 +137,12 @@ export function useStudentData() {
         await loadAideAssignments()
       } else if (userRole === 'paraeducator' && currentUser.value.uid) {
         // Paraeducators can only load their own aide assignment
-        console.log('🔍 PARAEDUCATOR DEBUG: Loading aide assignment for paraeducator:', currentUser.value.uid)
         await loadAideAssignment(currentUser.value.uid)
-        console.log('🔍 PARAEDUCATOR DEBUG: Aide assignment loaded, current assignments:', aideAssignment.value)
         
         // Listen for changes to their own aideSchedules document for real-time updates
         const aideDocRef = doc(db, 'aideSchedules', currentUser.value.uid)
         const unsubscribe = onSnapshot(aideDocRef, async snap => {
           if (snap.exists()) {
-            console.log('🔍 useStudentData: Aide schedule updated, reloading students...')
             // Update the aide assignment data
             await loadAideAssignment(currentUser.value.uid)
             // Re-fetch role-based students (will use updated studentIds)
@@ -151,8 +154,7 @@ export function useStudentData() {
         onUnmounted(() => unsubscribe())
       }
       
-      console.log('🔒 Security: Loaded', students.value.length, 'students for', currentUser.value?.role)
-      console.log('StudentsView - loaded users:', Object.keys(userMap.value || {}).length, 'users')
+
       
     } catch (err) {
       console.error('Error fetching data:', err)
@@ -212,7 +214,6 @@ export function useStudentData() {
 
   // Auto-load data on mount
   onMounted(() => {
-    console.log('🔍 useStudentData: onMounted triggered, calling fetchData...')
     fetchData()
   })
 
@@ -221,15 +222,10 @@ export function useStudentData() {
     () => currentUser.value?.role,
     async (newRole, oldRole) => {
       if (newRole && newRole !== oldRole) {
-        console.log('🔒 Security: User role changed from', oldRole, 'to', newRole, '- reloading students')
-        
         // Reload students with new role
         const user = currentUser.value
-        console.log('🔍 useStudentData: Role watcher - checking user:', user)
         if (user) {
-          console.log('🔍 useStudentData: Role watcher - about to call loadStudents()...')
           const roleBasedStudents = await loadStudents()
-          console.log('🔍 useStudentData: Role watcher - loadStudents() returned:', roleBasedStudents.length, 'students')
           setStudents(roleBasedStudents)
           
           // Run security test
@@ -237,8 +233,6 @@ export function useStudentData() {
           if (!securityTest.isSecure) {
             console.error('🚨 SECURITY VIOLATION DETECTED:', securityTest.violations)
           }
-          
-          console.log('🔒 Security: Reloaded', roleBasedStudents.length, 'students for role', newRole)
         }
       }
     },
@@ -256,12 +250,14 @@ export function useStudentData() {
     userList,
     userMapObj,
     caseManagers,
+    caseManagersWithCounts,
     teacherList,
     userRoles,
     aideAssignment,
     feedbackForms,
     formsLoading,
     paraeducators,
+    serviceProviders,
     
     // Computed
     currentUser,

@@ -144,10 +144,13 @@
 import { ref, reactive, onMounted } from 'vue'
 import { db } from '@/firebase'
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, orderBy, limit } from 'firebase/firestore'
+import { useAuthStore } from '@/store/authStore'
 
 export default {
   name: 'AdminBackupRestore',
   setup() {
+    const authStore = useAuthStore()
+    
     const collections = ref([
       { id: 'users', name: 'Users' },
       { id: 'students', name: 'Students' },
@@ -179,8 +182,8 @@ export default {
     // Load existing backups
     const loadBackups = async () => {
       try {
-        console.log('🔍 DEBUG: Current user role:', currentUser.value?.role)
-        console.log('🔍 DEBUG: Current user:', currentUser.value)
+        console.log('🔍 DEBUG: Current user role:', authStore.user?.role)
+        console.log('🔍 DEBUG: Current user:', authStore.user)
         
         const backupsRef = collection(db, 'backups')
         const q = query(backupsRef, orderBy('createdAt', 'desc'), limit(20))
@@ -196,8 +199,8 @@ export default {
         console.error('❌ DEBUG: Error details:', {
           code: error.code,
           message: error.message,
-          userRole: currentUser.value?.role,
-          userId: currentUser.value?.uid
+          userRole: authStore.user?.role,
+          userId: authStore.user?.uid
         })
         showStatus('Error loading backups', 'error')
       }

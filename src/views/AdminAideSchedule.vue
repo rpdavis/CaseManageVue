@@ -192,7 +192,16 @@ const paraeducators = computed(() => {
 })
 
 const teachers = computed(() => {
-  return userList.value?.filter(user => user.role === 'teacher') || []
+  return userList.value?.filter(user => ['teacher', 'case_manager', 'sped_chair'].includes(user.role))
+    .sort((a, b) => {
+      // Extract last names for sorting
+      const getLastName = (user) => {
+        const fullName = user.name || user.email || user.id
+        const nameParts = fullName.split(' ')
+        return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+      }
+      return getLastName(a).localeCompare(getLastName(b))
+    }) || []
 })
 
 const periods = computed(() => {

@@ -10,11 +10,11 @@ export const isProduction = () => {
 }
 
 export const getApiBaseUrl = () => {
-  return import.meta.env.VITE_API_BASE_URL || 'https://us-central1-casemangervue.cloudfunctions.net'
+  return import.meta.env.VITE_API_BASE_URL || 'https://us-central1-casemanagevue-jepson-prod.cloudfunctions.net'
 }
 
 export const getFunctionsUrl = () => {
-  return import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-casemangervue.cloudfunctions.net'
+  return import.meta.env.VITE_FUNCTIONS_URL || 'https://us-central1-casemanagevue-jepson-prod.cloudfunctions.net'
 }
 
 export const shouldEnableDebugMenu = () => {

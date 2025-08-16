@@ -44,6 +44,20 @@ export function useAdministrator504View(studentData, filterData) {
   // Group for class view
   const studentsByPeriod = computed(() => {
     if (!currentUserId.value) return {}
+    
+    // If a specific teacher is selected in filters, group by that teacher's periods
+    const selectedTeacher = filterData.currentFilters.teacher
+    if (selectedTeacher && selectedTeacher !== 'all') {
+      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedTeacher)
+    }
+    
+    // If a specific paraeducator is selected, group by that paraeducator's periods  
+    const selectedParaeducator = filterData.currentFilters.paraeducator
+    if (selectedParaeducator && selectedParaeducator !== 'all') {
+      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedParaeducator)
+    }
+    
+    // Otherwise, group by current user's periods
     return baseView.groupStudentsByPeriod(visibleStudents.value, currentUserId.value)
   })
 

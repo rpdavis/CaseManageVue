@@ -102,19 +102,49 @@ export function useTestingData(students, users, appSettings) {
 
   // Get students for selected teachers
   const getStudentsForTeachers = (teacherIds, excludedPeriods = []) => {
-    return students.value.filter(student => {
-      // Only include students with separate setting flag
-      const hasSeparateSetting = student.app?.flags?.flag1 || student.flag1 || false
+    console.log('🔍 CUSTOM TAB DEBUG: Filtering students for teachers:', teacherIds)
+    console.log('🔍 CUSTOM TAB DEBUG: Total students available:', students.value.length)
+    
+    const filteredStudents = students.value.filter(student => {
+      // Only include students with separate setting flag (flag2 or separateSetting)
+      const hasSeparateSetting = student.app?.flags?.flag2 || student.app?.flags?.separateSetting || student.separateSetting || student.flag2 || false
+      console.log('🔍 CUSTOM TAB DEBUG: Student', student.app?.studentData?.firstName, 'hasSeparateSetting:', hasSeparateSetting, 'flags:', student.app?.flags)
+      
       if (!hasSeparateSetting) {
         return false
       }
       
+      console.log('🔍 CUSTOM TAB DEBUG: Checking schedules for student', student.app?.studentData?.firstName)
+      console.log('🔍 CUSTOM TAB DEBUG: Student schedule:', student.app?.schedule)
+      console.log('🔍 CUSTOM TAB DEBUG: Student aeries schedule:', student.aeries?.schedule)
+      
       // Check aeries schedule structure
       if (student.aeries?.schedule) {
+        console.log('🔍 CUSTOM TAB DEBUG: Checking aeries schedule for', student.app?.studentData?.firstName)
         const scheduleEntries = Object.entries(student.aeries.schedule)
         for (let i = 0; i < scheduleEntries.length; i++) {
           const [periodKey, period] = scheduleEntries[i]
+          console.log('🔍 CUSTOM TAB DEBUG: Aeries period', periodKey, ':', period)
           if (period && period.teacherId && teacherIds.includes(String(period.teacherId))) {
+            console.log('🔍 CUSTOM TAB DEBUG: Found matching teacher in aeries schedule!')
+            // Use the period key mapping instead of array index
+            if (!isPeriodExcluded(periodKey, excludedPeriods)) {
+              return true
+            }
+          }
+        }
+      }
+      
+      // Check app.schedule structure (direct schedule object)
+      if (student.app?.schedule && typeof student.app.schedule === 'object') {
+        console.log('🔍 CUSTOM TAB DEBUG: Checking app.schedule (direct) for', student.app?.studentData?.firstName)
+        const scheduleEntries = Object.entries(student.app.schedule)
+        for (let i = 0; i < scheduleEntries.length; i++) {
+          const [periodKey, teacherData] = scheduleEntries[i]
+          const actualTeacherId = typeof teacherData === 'object' ? teacherData.teacherId : teacherData
+          console.log('🔍 CUSTOM TAB DEBUG: Direct schedule period', periodKey, ':', teacherData, 'actual teacher ID:', actualTeacherId)
+          if (actualTeacherId && teacherIds.includes(String(actualTeacherId))) {
+            console.log('🔍 CUSTOM TAB DEBUG: Found matching teacher in direct schedule!')
             // Use the period key mapping instead of array index
             if (!isPeriodExcluded(periodKey, excludedPeriods)) {
               return true
@@ -125,10 +155,13 @@ export function useTestingData(students, users, appSettings) {
       
       // Check app.schedule.periods structure
       if (student.app?.schedule?.periods) {
+        console.log('🔍 CUSTOM TAB DEBUG: Checking app.schedule.periods for', student.app?.studentData?.firstName)
         const periodEntries = Object.entries(student.app.schedule.periods)
         for (let i = 0; i < periodEntries.length; i++) {
           const [periodKey, teacherId] = periodEntries[i]
+          console.log('🔍 CUSTOM TAB DEBUG: App schedule period', periodKey, ':', teacherId)
           if (teacherId && teacherIds.includes(String(teacherId))) {
+            console.log('🔍 CUSTOM TAB DEBUG: Found matching teacher in app schedule!')
             // Use the period key mapping instead of array index
             if (!isPeriodExcluded(periodKey, excludedPeriods)) {
               return true
@@ -154,6 +187,9 @@ export function useTestingData(students, users, appSettings) {
       
       return false
     })
+    
+    console.log('🔍 CUSTOM TAB DEBUG: Filtered students result:', filteredStudents.length, 'students')
+    return filteredStudents
   }
 
   // Get student's periods for selected teachers

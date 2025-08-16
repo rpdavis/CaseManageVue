@@ -1,0 +1,389 @@
+rules_version = '2';
+
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║                    HYBRID DATABASE-LEVEL SECURITY FILTERING                ║
+// ║ This ruleset implements a hybrid approach using app.staffIds as primary   ║
+// ║ access control with essential fallbacks for migration safety.             ║
+// ║                                                                           ║
+// ║ KEY FEATURES:                                                             ║
+// ║ 1. PRIMARY ACCESS: app.staffIds array for simplified access control       ║
+// ║ 2. CRITICAL FALLBACK: Case manager direct assignment check                ║
+// ║ 3. PARA FALLBACK: aideSchedules collection until staffIds complete        ║
+// ║ 4. FLEXIBLE QUERIES: Allows additional filters beyond required ones       ║
+// ║                                                                           ║
+// ║ MIGRATION PATH:                                                           ║
+// ║ Phase 1: Deploy these hybrid rules (current)                             ║
+// ║ Phase 2: Monitor fallback usage in logs                                  ║
+// ║ Phase 3: Remove fallbacks once staffIds proven 100% reliable             ║
+// ║                                                                           ║
+// ║ See Documentation/SECURITY_DATABASE_FILTERING.md for details             ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ─── AUTH & ROLE HELPERS ─────────────────────────────────────────────────
+    function isAuth() { 
+      return request.auth != null; 
+    }
+    
+    function uid() { 
+      return request.auth.uid; 
+    }
+    
+    function role() { 
+      return request.auth.token.role; 
+    }
+    
+    // Admin role checks (v1.1.3+ role names)
+    function isAdmin() { 
+      return role() == 'admin'; 
+    }
+    
+    function isSchoolAdmin() { 
+      return role() == 'school_admin'; 
+    }
+    
+    function isAdmin504() { 
+      return role() == 'admin_504'; 
+    }
+    
+    function isSpedChair() {
+      return role() == 'sped_chair';
+    }
+    
+    function isStaffView() {
+      return role() == 'staff_view';
+    }
+    
+    function isStaffEdit() {
+      return role() == 'staff_edit';
+    }
+    
+    function isAnyAdmin() { 
+      return isAdmin() || isSchoolAdmin() || isAdmin504() || isSpedChair(); 
+    }
+    
+    // Staff view and edit roles - can read all students
+    function isStaffViewOrEdit() {
+      return isStaffView() || isStaffEdit();
+    }
+    
+    // Combined admin roles - for read access (staff_view and staff_edit have full access but need special handling)
+    function hasFullReadAccess() {
+      return isAnyAdmin() || isStaffViewOrEdit();
+    }
+    
+    function isSuperAdmin() {
+      return isAdmin() || isSchoolAdmin();
+    }
+    
+    // Staff role checks
+    function isCaseManager() {
+      return role() == 'case_manager';
+    }
+    
+    function isTeacher() {
+      return role() == 'teacher';
+    }
+    
+    function isServiceProvider() {
+      return role() == 'service_provider';
+    }
+    
+    function isParaeducator() {
+      return role() == 'paraeducator';
+    }
+    
+    function isStaffRole() {
+      return role() in ['case_manager', 'teacher', 'service_provider', 'paraeducator'];
+    }
+    
+    function hasValidRole() {
+      return role() in ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair', 
+                       'case_manager', 'teacher', 'service_provider', 'paraeducator'];
+    }
+    
+    function isOwner(userId) {
+      return uid() == userId;
+    }
+    
+    // ─── DATA VALIDATION ──────────────────────────────────────────────────────
+    // Validate data structure matches expected format
+    function validEncryptedFields() {
+      let d = request.resource.data.app;
+      return (d.accommodations == null || 
+              (d.accommodations is map &&
+               (d.accommodations.instruction == null || d.accommodations.instruction is string) &&
+               (d.accommodations.assessment == null || d.accommodations.assessment is string))) &&
+             (d.schedule == null || 
+              (d.schedule.classServices == null || d.schedule.classServices is list)) &&
+             (d.studentData == null || 
+              (d.studentData.plan == null || d.studentData.plan is string));
+    }
+    
+    // ─── ACCESS CONTROL ────────────────────────────────────────────────────────
+    // PRIMARY: Check staffIds array for access
+    function hasStaffIdsAccess(doc) {
+      return doc.app.staffIds != null && uid() in doc.app.staffIds;
+    }
+    
+    // CRITICAL FALLBACK: Case manager direct assignment (handles timing gaps)
+    function hasCaseManagerFallback(doc) {
+      return isCaseManager() && 
+             doc.app.studentData.caseManagerId == uid();
+    }
+    
+    // PARA FALLBACK: Check aideSchedules collection
+    function hasParaFallback(studentId) {
+      let sched = get(/databases/$(database)/documents/aideSchedules/$(uid())).data;
+      return sched.studentIds != null && studentId in sched.studentIds;
+    }
+    
+    // Combined read access for a student document - use resource.data instead of get()
+    function canReadStudent(studentId) {
+      let doc = resource.data;
+      
+      return hasFullReadAccess() ||
+             // SPED Chair - can see all IEP students OR students they work with directly (including 504 if assigned)
+             (isSpedChair() && (
+               (doc.app.studentData.plan == 'IEP') ||
+               (doc.app.staffIds != null && uid() in doc.app.staffIds)
+             )) ||
+             // Primary array check for staff
+             (isStaffRole() && doc.app.staffIds != null && uid() in doc.app.staffIds) ||
+             // Fallback for case managers
+             (isCaseManager() && doc.app.studentData.caseManagerId == uid()) ||
+             // Paraeducator fallback (still needs get() on aideSchedules)
+             (isParaeducator() && hasParaFallback(studentId));
+    }
+    
+    // Edit permissions - use resource.data instead of get()
+    function canEditStudent(studentId) {
+      let doc = resource.data;
+      
+      return isSuperAdmin() ||
+             (isAdmin504() && 
+              doc.app.studentData.plan == '504' &&
+              request.resource.data.app.studentData.plan == '504') ||
+             // SPED Chair - can edit all IEP students OR students they work with directly
+             (isSpedChair() && (
+               (doc.app.studentData.plan == 'IEP') ||
+               (doc.app.staffIds != null && uid() in doc.app.staffIds)
+             )) ||
+             // Case managers can edit students on their caseload
+             (isCaseManager() && doc.app.studentData.caseManagerId == uid());
+    }
+    
+    // Query validation: ensure proper filtering
+    function validStudentQuery() {
+      // Only full admins can query without restrictions
+      return hasFullReadAccess() ||
+             // SPED Chair must use filtered queries
+             (isSpedChair() && hasSpedChairValidQuery()) ||
+             // Case managers can query (will be filtered by access control)
+             isCaseManager() ||
+             // Other staff with valid filters
+             (isStaffRole() && hasValidStaffQuery()) ||
+             // Testing queries
+             hasValidTestingQuery();
+    }
+    
+    // Check if staff query has required filters
+    function hasValidStaffQuery() {
+      return request.query.where != null &&
+             (hasStaffIdsFilter() || 
+              (isCaseManager() && hasCaseManagerIdFilter()));
+    }
+    
+    // SPED Chair query validation - must filter by IEP plan OR staffIds
+    function hasSpedChairValidQuery() {
+      return request.query.where != null &&
+             request.query.where.size() > 0 &&
+             (
+               // Must filter by IEP plan
+               (request.query.where[0][0] == 'app.studentData.plan' && 
+                request.query.where[0][1] == '==' && 
+                request.query.where[0][2] == 'IEP') ||
+               // OR must use staffIds filter
+               hasStaffIdsFilter()
+             );
+    }
+    
+    // Check for staffIds filter - search through all where clauses
+    function hasStaffIdsFilter() {
+      return request.query.where != null &&
+             request.query.where.size() > 0 &&
+             (
+               // Check each possible position for the staffIds filter
+               (request.query.where.size() >= 1 &&
+                request.query.where[0][0] == 'app.staffIds' && 
+                request.query.where[0][1] == 'array-contains' && 
+                request.query.where[0][2] == uid()) ||
+               (request.query.where.size() >= 2 &&
+                request.query.where[1][0] == 'app.staffIds' && 
+                request.query.where[1][1] == 'array-contains' && 
+                request.query.where[1][2] == uid()) ||
+               (request.query.where.size() >= 3 &&
+                request.query.where[2][0] == 'app.staffIds' && 
+                request.query.where[2][1] == 'array-contains' && 
+                request.query.where[2][2] == uid()) ||
+               (request.query.where.size() >= 4 &&
+                request.query.where[3][0] == 'app.staffIds' && 
+                request.query.where[3][1] == 'array-contains' && 
+                request.query.where[3][2] == uid())
+             );
+    }
+    
+    // Check for caseManagerId filter
+    function hasCaseManagerIdFilter() {
+      return request.query.where.size() > 0 &&
+             ((request.query.where[0][0] == 'app.studentData.caseManagerId' && 
+               request.query.where[0][1] == '==' && 
+               request.query.where[0][2] == uid()) ||
+              (request.query.where.size() > 1 &&
+               request.query.where[1][0] == 'app.studentData.caseManagerId' && 
+               request.query.where[1][1] == '==' && 
+               request.query.where[1][2] == uid()));
+    }
+    
+    // Check for testing query filters
+    function hasValidTestingQuery() {
+      return request.query.where != null && 
+             request.query.where.size() > 0 &&
+             (request.query.where[0][0] == 'app.flags.flag2' || 
+              request.query.where[0][0] == 'app.flags.separateSetting') &&
+             request.query.where[0][1] == '==' && 
+             request.query.where[0][2] == true;
+    }
+    
+    // ─── COLLECTIONS ──────────────────────────────────────────────────────────
+    
+    // Students collection - Fixed to use resource.data
+    match /students/{studentId} {
+      allow read: if isAuth() && hasValidRole() && canReadStudent(studentId);
+      allow list: if isAuth() && hasValidRole() && validStudentQuery();
+      allow create: if isAuth() && isAnyAdmin() && validEncryptedFields();
+      allow update: if isAuth() && hasValidRole() && canEditStudent(studentId) && validEncryptedFields();
+      allow delete: if isAuth() && isSuperAdmin();
+    }
+    
+    // Users collection - Admin management, staff read access for names/lookup
+    match /users/{userId} {
+      allow read: if isAuth() && hasValidRole();
+      allow create: if isAuth() && isAnyAdmin();
+      allow update: if isAuth() && (isAnyAdmin() || isOwner(userId));
+      allow delete: if isAuth() && isAnyAdmin();
+    }
+    
+    // App settings - Admin only write, all valid roles read
+    match /app_settings/{document} {
+      allow read: if isAuth() && hasValidRole();
+      allow write: if isAuth() && isAnyAdmin();
+    }
+    
+    // Security settings - Admin only (includes session timeout settings)
+    match /app_settings/security {
+      allow read: if isAuth() && hasValidRole(); // All users need to read timeout settings
+      allow write: if isAuth() && isAnyAdmin(); // Only admins can change security settings
+    }
+    
+    // Theme settings - All users can read, admins can write
+    match /app_settings/theme {
+      allow read: if isAuth() && hasValidRole(); // All users need to read theme settings
+      allow write: if isAuth() && isAnyAdmin(); // Only admins can change theme settings
+    }
+    
+    // Aide schedules - Admin and paraeducator access
+    match /aideSchedules/{aideId} {
+      allow read: if isAuth() && (isAnyAdmin() || isOwner(aideId));
+      allow write: if isAuth() && isAnyAdmin();
+    }
+    
+    // Config collection (permissions matrix and other config)
+    match /config/{document} {
+      allow read: if isAuth() && hasValidRole();
+      allow write: if isAuth() && isSuperAdmin();
+    }
+    
+    // Feedback forms - Case managers and all admin roles
+    match /feedbackForms/{formId} {
+      allow read: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow create, update: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow delete: if isAuth() && isSuperAdmin();
+    }
+    
+    // Feedback responses - Read-only, write via Cloud Functions
+    match /feedbackResponses/{responseId} {
+      allow read: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow write: if false; // Only Cloud Functions
+    }
+    
+    // Feedback send log - Read-only, write via Cloud Functions
+    match /feedbackSendLog/{logId} {
+      allow read: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow write: if false; // Only Cloud Functions
+    }
+    
+    // Feedback documents - Admin roles and case managers can access documents
+    match /feedbackDocuments/{documentId} {
+      allow read: if isAuth() && (
+        isAnyAdmin() || 
+        isCaseManager() || 
+        isSpedChair()
+      );
+      allow create: if isAuth() && (
+        isAnyAdmin() || 
+        isCaseManager() || 
+        isSpedChair()
+      );
+      allow update: if isAuth() && (
+        isAnyAdmin() || 
+        isCaseManager() || 
+        isSpedChair()
+      );
+      allow delete: if isAuth() && isAnyAdmin();
+    }
+    
+    // Testing collection
+    match /testing/{testId} {
+      allow read: if isAuth() && hasValidRole();
+      allow write: if isAuth() && isAnyAdmin();
+    }
+    
+    // Audit logs - FERPA compliance audit trail
+    match /auditLogs/{logId} {
+      allow read: if isAuth() && isSuperAdmin(); // Only super admins can read audit logs
+      allow create: if isAuth() && hasValidRole(); // All authenticated users can create logs
+      allow write: if isAuth() && hasValidRole(); // Allow write for session timeout logging
+      allow update, delete: if false; // Audit logs are immutable
+    }
+    
+    // IEP Access logs - Legacy, keeping for backward compatibility
+    match /iepAccessLogs/{logId} {
+      allow read: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow create: if isAuth() && hasValidRole();
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // PDF Access logs - Legacy, keeping for backward compatibility  
+    match /pdfAccessLogs/{logId} {
+      allow read: if isAuth() && (isAnyAdmin() || isCaseManager());
+      allow create: if isAuth() && hasValidRole();
+      allow update, delete: if false; // Immutable logs
+    }
+    
+    // PDF Metadata - For secure PDF system
+    match /pdfMetadata/{fileId} {
+      allow read: if isAuth() && hasValidRole();
+      allow create: if isAuth() && hasValidRole();
+      allow update: if isAuth() && hasValidRole();
+      allow delete: if isAuth() && isAnyAdmin();
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

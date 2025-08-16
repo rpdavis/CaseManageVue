@@ -111,17 +111,17 @@ class SecurePdfHandler {
       }
       console.log('✅ Access permissions verified')
 
-      // Use HTTP proxy Cloud Function to avoid CORS issues
+      // Use HTTP streaming function (v1.1.6 approach - more secure, no CORS issues)
       console.log('🔑 Getting authentication token...')
       const { auth } = await import('@/firebase');
       const idToken = await auth.currentUser.getIdToken();
       
-      // Use the HTTP proxy function instead of signed URLs
-      const proxyUrl = `https://downloadstudentfile-zr6j2ycwuq-uc.a.run.app/downloadStudentFile?studentId=${studentId}&fileName=${secureFileName}`;
+      // Use the HTTP streaming function instead of signed URLs
+      const streamingUrl = `https://downloadstudentfile-zxuytv4xtq-uc.a.run.app/downloadStudentFile?studentId=${studentId}&fileName=${secureFileName}`;
       
-      console.log('🌐 Downloading encrypted file from secure storage...')
+      console.log('🌐 Downloading encrypted file via secure streaming...')
       
-      const response = await fetch(proxyUrl, {
+      const response = await fetch(streamingUrl, {
         headers: {
           'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json'
@@ -151,9 +151,10 @@ class SecurePdfHandler {
 
       console.log('✅ PDF ready for viewing, size:', pdfBlob.size, 'bytes')
       return pdfBlob;
+
     } catch (error) {
-      console.error('❌ PDF download failed:', error);
-      throw new Error('Failed to retrieve PDF: ' + error.message);
+      console.error('❌ Error in downloadAndDecryptPdf:', error);
+      throw new Error(`PDF download failed: ${error.message}`);
     }
   }
 
@@ -165,8 +166,13 @@ class SecurePdfHandler {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       const userData = userDoc.data();
 
-      // Check role-based access
-      if (['admin', 'administrator', 'sped_chair'].includes(userData.role)) {
+      // Check admin role access - all admin roles can access all documents
+      if (['admin', 'school_admin', 'administrator', 'sped_chair', 'admin_504'].includes(userData.role)) {
+        return true;
+      }
+
+      // Check staff view/edit roles - can access all documents (especially At-A-Glance)
+      if (['staff_view', 'staff_edit'].includes(userData.role)) {
         return true;
       }
 
@@ -181,6 +187,20 @@ class SecurePdfHandler {
         const studentDoc = await getDoc(doc(db, 'students', studentId));
         const schedule = studentDoc.data()?.app?.schedule?.periods || {};
         return Object.values(schedule).includes(user.uid);
+      }
+
+      // Check service provider access
+      if (userData.role === 'service_provider') {
+        const studentDoc = await getDoc(doc(db, 'students', studentId));
+        const staffIds = studentDoc.data()?.app?.staffIds || [];
+        return staffIds.includes(user.uid);
+      }
+
+      // Check paraeducator access
+      if (userData.role === 'paraeducator') {
+        const studentDoc = await getDoc(doc(db, 'students', studentId));
+        const staffIds = studentDoc.data()?.app?.staffIds || [];
+        return staffIds.includes(user.uid);
       }
 
       return false;

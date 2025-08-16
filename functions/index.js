@@ -279,9 +279,9 @@ exports.getAeriesToken = onCall(
 });
 
 // ─── TEACHER FEEDBACK FUNCTIONS ──────────────────────────────────────────────
-// exports.createFeedbackFormSheet = teacherFeedbackFunctions.createFeedbackFormSheet; // DISABLED - service account approach removed
+exports.createFeedbackFormSheet = teacherFeedbackFunctions.createFeedbackFormSheet;
 exports.createFeedbackFormSheetWithUserAuth = teacherFeedbackFunctions.createFeedbackFormSheetWithUserAuth;
-// exports.checkServiceAccountStorage = teacherFeedbackFunctions.checkServiceAccountStorage; // DISABLED - service account approach removed
+exports.checkServiceAccountStorage = teacherFeedbackFunctions.checkServiceAccountStorage;
 
 // ─── CASE MANAGER FEEDBACK SYSTEM FUNCTIONS ──────────────────────────────────
 exports.createCaseManagerFeedbackSystem = teacherFeedbackFunctions.createCaseManagerFeedbackSystem;
@@ -318,34 +318,227 @@ exports.getStudentFeedback = onCall(
 });
 
 // ─── SECURE FILE ACCESS FUNCTIONS ────────────────────────────────────────────
-exports.getStudentFileUrl = onCall(
-  config.createFunctionOptions(), 
-  async (request) => {
+// Replace the current getStudentFileUrl function with this FERPA-compliant version
+exports.getStudentFileUrl = onCall({
+  region: "us-central1",
+  maxInstances: 10
+}, async (request) => {
   requireAuth(request);
   
-  const { fileName } = request.data;
+  const { studentId, fileName } = request.data;
+  
+  // Validate inputs
+  validateRequired(studentId, "Student ID");
   validateRequired(fileName, "File name");
   
-  if (checkSecurityThreats(fileName)) {
-    throw new HttpsError("invalid-argument", "Security threat detected");
-  }
-
+  // Sanitize inputs
+  const sanitizedStudentId = sanitizeString(studentId, 50);
+  const sanitizedFileName = sanitizeString(fileName, 100);
+  
+  // Security checks
+  checkSecurityThreats(sanitizedStudentId);
+  checkSecurityThreats(sanitizedFileName);
+  
   try {
-    const bucket = getStorage().bucket();
-    const filePath = config.getStoragePathWithParams('studentsPath', { fileName });
-    const file = bucket.file(filePath);
+    // Check if user has access to this student
+    const studentDoc = await db.collection("students").doc(sanitizedStudentId).get();
+    if (!studentDoc.exists) {
+      throw new HttpsError("not-found", "Student not found");
+    }
     
-    const [url] = await file.getSignedUrl({
+    const studentData = studentDoc.data();
+    const staffIds = studentData.app?.staffIds || [];
+    const caseManagerId = studentData.app?.studentData?.caseManagerId;
+    
+    // Authorization check
+    const userRole = request.auth.token.role;
+    const userId = request.auth.uid;
+    
+    const hasAccess = (
+      // Super admins can access any file
+      userRole === 'admin' || userRole === 'sped_chair' ||
+      // School admins can access all files
+      userRole === 'school_admin' ||
+      // Staff editors can access all files
+      userRole === 'staff_edit' ||
+      // 504 coordinators can access all files (both old and new names)
+      userRole === 'administrator_504_CM' || userRole === 'admin_504' ||
+      // Staff viewers can access all files (both old and new names)
+      userRole === 'administrator' || userRole === 'staff_view' ||
+      // User is in the student's staff list
+      staffIds.includes(userId) ||
+      // Case manager can access their own student's files
+      (userRole === 'case_manager' && userId === caseManagerId)
+    );
+    
+    if (!hasAccess) {
+      throw new HttpsError("permission-denied", "You don't have access to this student's files");
+    }
+    
+    // Generate signed URL (expires in 5 minutes)
+    const bucket = getStorage().bucket();
+    
+    // Check both possible file paths (students folder first for consistency)
+    let filePath = `students/${sanitizedStudentId}/${sanitizedFileName}`;
+    let file = bucket.file(filePath);
+    
+    // Check if file exists in students path
+    let [exists] = await file.exists();
+    
+    // If not found, check encrypted-pdfs path (for backward compatibility)
+    if (!exists) {
+      filePath = `encrypted-pdfs/${sanitizedStudentId}/${sanitizedFileName}`;
+      file = bucket.file(filePath);
+      [exists] = await file.exists();
+    }
+    
+    if (!exists) {
+      throw new HttpsError("not-found", "File not found");
+    }
+    
+    // Generate signed URL without download tokens
+    const [signedUrl] = await file.getSignedUrl({
       action: 'read',
-      expires: Date.now() + config.getSignedUrlExpiry(),
+      expires: Date.now() + 5 * 60 * 1000,  // 5 minutes
+      version: 'v4',  // Use v4 signed URLs for better security
+      responseDisposition: 'inline',  // Open in browser instead of downloading
+      responseType: 'application/pdf'  // Set content type for PDF
     });
     
-    return { url };
+    console.log(`✅ Generated signed URL for ${filePath} (user: ${userId})`);
+    
+    return { url: signedUrl };
+    
   } catch (error) {
-    console.error("Get file URL error:", error);
-    throw new HttpsError("internal", "Failed to generate file URL");
+    console.error(`❌ Error generating signed URL:`, error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", `Failed to generate file URL: ${error.message}`);
   }
 });
+
+// ─── SECURE FILE PROXY ─────────────────────────────────────────────────────
+const downloadApp = express();
+downloadApp.use(cors({ origin: true }));
+downloadApp.use(express.json());
+
+// Authentication middleware
+downloadApp.use(async (req, res, next) => {
+  const authHeader = req.get('Authorization') || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).send('Unauthorized');
+  }
+  const idToken = authHeader.split('Bearer ')[1];
+  try {
+    req.user = await getAuth().verifyIdToken(idToken);
+    next();
+  } catch (error) {
+    return res.status(401).send('Unauthorized');
+  }
+});
+
+// File download endpoint
+// URL format: /downloadStudentFile?studentId=ID&fileName=filename.pdf
+downloadApp.get('/downloadStudentFile', async (req, res) => {
+  const { studentId, fileName } = req.query;
+  if (!studentId || !fileName) {
+    return res.status(400).send('studentId and fileName required');
+  }
+  
+  // Sanitize inputs
+  const sanitizedStudentId = sanitizeString(studentId, 50);
+  const sanitizedFileName = sanitizeString(fileName, 100);
+  
+  // Security checks
+  checkSecurityThreats(sanitizedStudentId);
+  checkSecurityThreats(sanitizedFileName);
+  
+  const { role, uid } = req.user;
+  
+  try {
+    // Authorization check
+    const docSnap = await db.collection('students').doc(sanitizedStudentId).get();
+    if (!docSnap.exists) {
+      return res.status(404).send('Student not found');
+    }
+    
+    const data = docSnap.data();
+    const staffIds = data.app?.staffIds || [];
+    const caseManagerId = data.app?.studentData?.caseManagerId;
+    
+    const hasAccess = (
+      // Super admins can access any file
+      role === 'admin' || role === 'sped_chair' ||
+      // School admins can access all files
+      role === 'school_admin' ||
+      // Staff editors can access all files
+      role === 'staff_edit' ||
+      // 504 coordinators can access all files (both old and new names)
+      role === 'administrator_504_CM' || role === 'admin_504' ||
+      // Staff viewers can access all files (both old and new names)
+      role === 'administrator' || role === 'staff_view' ||
+      // User is in the student's staff list
+      staffIds.includes(uid) ||
+      // Case manager can access their own student's files
+      (role === 'case_manager' && uid === caseManagerId)
+    );
+    
+    if (!hasAccess) {
+      return res.status(403).send('You don\'t have access to this student\'s files');
+    }
+    
+    // Stream file from private bucket
+    const bucket = getStorage().bucket();
+    
+    // Check both possible file paths (students folder first for consistency)
+    let filePath = `students/${sanitizedStudentId}/${sanitizedFileName}`;
+    let file = bucket.file(filePath);
+    
+    // Check if file exists in students path
+    let [exists] = await file.exists();
+    
+    // If not found, check encrypted-pdfs path (for backward compatibility)
+    if (!exists) {
+      filePath = `encrypted-pdfs/${sanitizedStudentId}/${sanitizedFileName}`;
+      file = bucket.file(filePath);
+      [exists] = await file.exists();
+    }
+    
+    if (!exists) {
+      return res.status(404).send('File not found');
+    }
+    
+    console.log(`✅ Streaming file ${filePath} for user: ${uid}`);
+    
+    // Set headers for PDF streaming
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${sanitizedFileName}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // Stream the file directly to the response
+    file.createReadStream().pipe(res).on('error', err => {
+      console.error('Stream error:', err);
+      if (!res.headersSent) {
+        res.status(500).send('Error streaming file');
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in downloadStudentFile:', error);
+    if (!res.headersSent) {
+      res.status(500).send('Internal server error');
+    }
+  }
+});
+
+// HTTPS function proxy for secure file streaming
+exports.downloadStudentFile = onRequest(
+  { region: 'us-central1', allowUnauthenticated: false },
+  downloadApp
+);
 
 
 
@@ -615,91 +808,7 @@ exports.rebuildParaeducatorStudentIds = onDocumentWritten(
 
 
 
-// HTTP function for downloading student files
-const downloadApp = express();
-downloadApp.use(cors({ origin: true }));
-downloadApp.use(express.json());
-
-// Authentication middleware
-downloadApp.use(async (req, res, next) => {
-  const authHeader = req.get('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return res.status(401).send('Unauthorized');
-  }
-  const idToken = authHeader.split('Bearer ')[1];
-  try {
-    req.user = await adminAuth.verifyIdToken(idToken);
-    next();
-  } catch (error) {
-    return res.status(401).send('Unauthorized');
-  }
-});
-
-// File download endpoint
-// URL format: /downloadStudentFile?studentId=ID&fileName=filename.pdf
-downloadApp.get('/downloadStudentFile', async (req, res) => {
-  const { studentId, fileName } = req.query;
-  if (!studentId || !fileName) {
-    return res.status(400).send('studentId and fileName required');
-  }
-  const { role, uid } = req.user;
-  
-  // Authorization check
-  const docSnap = await db.collection('students').doc(studentId).get();
-  if (!docSnap.exists) {
-    return res.status(404).send('Student not found');
-  }
-  const data = docSnap.data();
-  const staffIds = data.app?.staffIds || [];
-  const caseManagerId = data.app?.studentData?.caseManagerId;
-  const allowed = (
-    config.isAdminRole(role) || config.isStaffRole(role) ||
-    staffIds.includes(uid) || (role === 'case_manager' && uid === caseManagerId)
-  );
-  if (!allowed) {
-    return res.status(403).send('Forbidden');
-  }
-  
-  // Stream file from private bucket
-  const bucket = getStorage().bucket();
-  
-  // Check both possible file paths (students folder first for consistency)
-  let filePath = `students/${studentId}/${fileName}`;
-  let file = bucket.file(filePath);
-  
-  try {
-    const [exists] = await file.exists();
-    if (!exists) {
-      // Try alternative path
-      filePath = `students/${fileName}`;
-      file = bucket.file(filePath);
-      const [exists2] = await file.exists();
-      if (!exists2) {
-        return res.status(404).send('File not found');
-      }
-    }
-    
-    const [metadata] = await file.getMetadata();
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
-    });
-    
-    res.json({
-      url,
-      contentType: metadata.contentType,
-      size: metadata.size
-    });
-  } catch (error) {
-    console.error('Download error:', error);
-    res.status(500).send('Internal server error');
-  }
-});
-
-exports.downloadStudentFile = onRequest(
-  config.createHttpFunctionOptions(),
-  downloadApp
-);
+// Duplicate HTTP function removed - using the one defined above
 
 // ─── EMAIL FUNCTIONS ──────────────────────────────────────────────────────────
 exports.sendStudentEmail = onCall(

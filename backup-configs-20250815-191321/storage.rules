@@ -1,0 +1,118 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Define helper functions to improve readability
+    function userRole(role) {
+      return request.auth.token.role == role;
+    }
+    function isSuperAdmin() {
+      return userRole('admin') || userRole('sped_chair');
+    }
+
+    // Firestore document getters (cross-service):
+    function getStudentDoc(studentId) {
+      return firestore.get(
+        /databases/(default)/documents/students/$(studentId)
+      );
+    }
+    function studentStaffIds(studentId) {
+      return getStudentDoc(studentId).data.app.staffIds;
+    }
+    function studentPlan(studentId) {
+      return getStudentDoc(studentId).data.app.studentData.plan;
+    }
+    function studentCaseManagerId(studentId) {
+      return getStudentDoc(studentId).data.app.studentData.caseManagerId;
+    }
+
+    // Match for highly sensitive documents (e.g. IEPs, BIPs, At-A-Glance) stored under a 'sensitive' folder
+    match /students/{studentId}/sensitive/{fileName} {
+      // Only authenticated staff can read if they're assigned to this student (or admin/sped chair/504 coordinator)
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||      // super admins can read any file
+        userRole('administrator_504_CM') ||  // 504 coordinators can read all files
+        request.auth.uid in studentStaffIds(studentId)  // user is listed on the student's staffIds
+      );
+      /* 
+         This uses Firestore data to check permissions: the user's UID must appear in the student document's staffIds array, 
+         or the user is an admin/sped_chair. Unauthenticated requests are always denied.
+      */
+
+      // Only users with write access on the student can upload or delete files
+      allow write: if request.auth != null && (
+        isSuperAdmin() ||                                     // admins and sped_chairs can manage any files
+        (userRole('case_manager') &&                          // case manager can write if they are this student's case manager
+           request.auth.uid == studentCaseManagerId(studentId))
+      );
+      /*
+         Write access (upload/delete) is restricted:
+         - Super admins (admin, sped_chair) can always write.
+         - A 504 Coordinator (administrator_504_CM) can modify files **only for 504-plan students** (verified via Firestore).
+         - A case_manager can modify files for their own student (their UID matches the student's caseManagerId).
+         - Other roles (teachers, service_providers, paraeducators, read-only admins) cannot upload/delete student files.
+      */
+    }
+
+    // Match for less sensitive student files (if any) under a 'general' folder 
+    match /students/{studentId}/general/{fileName} {
+      // The access rules here mirror the sensitive folder, but could be relaxed if needed for certain file types.
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||
+        userRole('administrator_504_CM') ||  // 504 coordinators can read all files
+        request.auth.uid in studentStaffIds(studentId)
+      );
+      allow write: if request.auth != null && (
+        isSuperAdmin() ||
+        (userRole('administrator_504_CM') && studentPlan(studentId) == '504') ||
+        (userRole('case_manager') && request.auth.uid == studentCaseManagerId(studentId))
+      );
+    }
+
+    // Match for all other student files (fallback for existing file structure)
+    match /students/{studentId}/{filePath=**} {
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||
+        userRole('administrator_504_CM') ||  // 504 coordinators can read all files
+        request.auth.uid in studentStaffIds(studentId)
+      );
+      allow write: if request.auth != null && (
+        isSuperAdmin() ||
+        userRole('sped_chair') ||                             // SPED chairs can upload files
+        userRole('administrator_504_CM') ||                   // 504 coordinators can upload files
+        userRole('case_manager') ||                           // case managers can upload files
+        request.auth.uid in studentStaffIds(studentId)       // users in student's staff list can upload
+      );
+    }
+
+    // Administrative files - only super admins can access
+    match /admin/{filePath=**} {
+      allow read, write: if request.auth != null && isSuperAdmin();
+    }
+
+    // Public assets (if any) - read-only for authenticated users
+    match /public/{filePath=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // Secure PDF system - encrypted files
+    match /encrypted-pdfs/{studentId}/{fileName} {
+      // Only authenticated users can read encrypted PDFs
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||      // super admins can read any file
+        userRole('administrator_504_CM') ||  // 504 coordinators can read all files
+        request.auth.uid in studentStaffIds(studentId)  // user is listed on the student's staffIds
+      );
+      
+      // Allow write for admins, SPED chairs, case managers, and users in student's staff list
+      allow write: if request.auth != null && (
+        isSuperAdmin() ||                                     // admins and sped_chairs can manage any files
+        userRole('sped_chair') ||                             // SPED chairs can upload files
+        userRole('administrator_504_CM') ||                   // 504 coordinators can upload files
+        userRole('case_manager') ||                           // case managers can upload files
+        request.auth.uid in studentStaffIds(studentId)       // users in student's staff list can upload
+      );
+    }
+  }
+} 

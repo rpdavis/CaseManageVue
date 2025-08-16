@@ -8,6 +8,22 @@ let isReconnecting = false
 export async function handleFirebaseError(error) {
   console.error('Firebase error:', error)
 
+  // Check for specific authentication errors that require immediate redirect
+  const authErrors = [
+    'permission-denied',
+    'unauthenticated', 
+    'auth/user-not-found',
+    'auth/invalid-user-token',
+    'auth/user-token-expired',
+    'auth/token-expired'
+  ]
+  
+  if (authErrors.some(code => error?.code?.includes(code) || error?.message?.includes(code))) {
+    console.log('🚪 Authentication error detected - redirecting to login immediately')
+    window.location.href = '/login'
+    return
+  }
+
   // If already trying to reconnect, don't start another attempt
   if (isReconnecting) {
     return
@@ -38,20 +54,7 @@ export async function handleFirebaseError(error) {
   }
 }
 
-// Set up auth state listener
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    // User is signed in, refresh token periodically
-    setInterval(async () => {
-      try {
-        await user.getIdToken(true)
-        console.log('🔄 Token refreshed automatically')
-      } catch (error) {
-        console.error('Failed to refresh token:', error)
-      }
-    }, 30 * 60 * 1000) // Refresh every 30 minutes
-  }
-})
+// Note: Token refresh is handled by authStore.js - no duplicate setup needed here
 
 export function isFirebaseError(error) {
   return error?.message?.includes('firestore.googleapis.com') ||

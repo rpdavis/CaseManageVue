@@ -33,42 +33,22 @@ export function useStudentQueries() {
   
   // Admin roles - can access all students
   const getAdminStudents = async () => {
-    console.log('🔍 Admin query: Loading all students - START')
-    console.log('🔍 Admin query: currentUser:', currentUser.value)
-    console.log('🔍 Admin query: currentRole:', currentRole.value)
-    console.log('🔍 Admin query: currentUserId:', currentUserId.value)
     try {
       const q = query(
         collection(db, 'students'),
         orderBy('app.studentData.lastName', 'asc')
       )
-      console.log('🔍 Admin query created:', q)
       const snapshot = await getDocs(q)
-      console.log('🔍 Admin query snapshot:', snapshot.size, 'documents')
       const students = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      console.log('🔍 Admin query result:', students.length, 'students')
-      
-      if (students.length > 0) {
-        console.log('🔍 First student structure:', students[0])
-      } else {
-        console.log('🔍 Admin query: NO STUDENTS FOUND - checking collection directly')
-        // Try a simple query without ordering to see if there are any students at all
-        const simpleQuery = query(collection(db, 'students'))
-        const simpleSnapshot = await getDocs(simpleQuery)
-        console.log('🔍 Simple query found:', simpleSnapshot.size, 'documents')
-      }
       return students
     } catch (error) {
       console.error('🔴 Admin query error:', error)
       console.error('🔴 Admin query error details:', error.message, error.code)
       // Try fallback query without ordering
       try {
-        console.log('🔍 Trying fallback query without ordering...')
         const fallbackQuery = query(collection(db, 'students'))
         const fallbackSnapshot = await getDocs(fallbackQuery)
-        console.log('🔍 Fallback query found:', fallbackSnapshot.size, 'documents')
         const fallbackStudents = fallbackSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        console.log('🔍 Fallback query returning:', fallbackStudents.length, 'students')
         return fallbackStudents
       } catch (fallbackError) {
         console.error('🔴 Fallback query also failed:', fallbackError)
@@ -80,7 +60,6 @@ export function useStudentQueries() {
   
   // 504 Coordinator role - can view all students but only edit 504 plan students
   const getAdmin504Students = async () => {
-    console.log('🔍 504 Admin query: Loading all students (edit restrictions applied at form level)')
     try {
       const q = query(
         collection(db, 'students'),
@@ -104,7 +83,6 @@ export function useStudentQueries() {
   
   // SPED Chair role - can view only IEP plan students
   const getSpedChairStudents = async () => {
-    console.log('🔍 SPED Chair query: Loading only IEP students')
     try {
       const q = query(
         collection(db, 'students'),
@@ -131,8 +109,6 @@ export function useStudentQueries() {
   }
   
   const getCaseManagerStudents = async (userId) => {
-    console.log('🔒 Security: Loading students for case manager (CM + SP access):', userId)
-    
     try {
       // Case managers need access to students they case manage AND students they provide services to
       // We need to run two separate queries and combine the results
@@ -168,12 +144,6 @@ export function useStudentQueries() {
         return lastNameA.localeCompare(lastNameB)
       })
       
-      console.log('🔒 Security: Case manager found:', cmStudents.length, 'CM students,', spStudents.length, 'SP students')
-      console.log('🔒 Security: Total unique students:', allStudents.length)
-      console.log('🔒 Security: CM accessible students:', allStudents.map(s => 
-        `${s.app?.studentData?.firstName} ${s.app?.studentData?.lastName}`
-      ).slice(0, 8))
-      
       return allStudents
     } catch (error) {
       console.error('🔒 Security: Error loading case manager students:', error)
@@ -183,8 +153,6 @@ export function useStudentQueries() {
   
   // Teachers use staffIds filter for secure database-level filtering
   const getTeacherStudents = async (userId) => {
-    console.log('🔍 Teacher query: Loading students for teacher', userId)
-    
     try {
       // Use required staffIds filter for Firestore security rules
       const q = query(
@@ -194,7 +162,6 @@ export function useStudentQueries() {
       )
       
       const snapshot = await getDocs(q)
-      console.log('🔍 Teacher query: Found', snapshot.size, 'students with teacher in staffIds')
       
       // Database filtering ensures only authorized students are returned
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -232,24 +199,10 @@ export function useStudentQueries() {
       return students
     } catch (error) {
       console.error('🔴 Service Provider query FAILED:', error)
-      console.error('🔴 Error code:', error.code)
-      console.error('🔴 Error message:', error.message)
-      console.error('🔴 Full error object:', error)
       
-      // Check current auth state
+      // Security: Check auth state for debugging
       const auth = getAuth()
-      console.error('🔴 Current auth state:', {
-        uid: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        customClaims: 'Check in browser dev tools'
-      })
-      
-      // Check if the userId parameter matches the auth uid
-      console.error('🔴 Auth mismatch check:', {
-        queryUserId: userId,
-        authUid: auth.currentUser?.uid,
-        match: userId === auth.currentUser?.uid
-      })
+      console.error('🔴 Service Provider auth mismatch - userId:', userId, 'authUid:', auth.currentUser?.uid)
       
       return []
     }
@@ -257,13 +210,8 @@ export function useStudentQueries() {
   
   // Paraeducator query - uses aideSchedules collection for student access
   const getParaeducatorStudents = async (userId) => {
-    console.log('🔍 Paraeducator query: Loading students for aide', userId)
-    console.log('🔍 Paraeducator query: userId type:', typeof userId)
-    console.log('🔍 Paraeducator query: userId value:', JSON.stringify(userId))
-    
     try {
       // First, check if aide has staffIds access (preferred method)
-      console.log('🔍 Paraeducator query: Trying staffIds approach first...')
       try {
         const staffIdsQuery = query(
           collection(db, 'students'),
@@ -271,29 +219,24 @@ export function useStudentQueries() {
           orderBy('app.studentData.lastName', 'asc')
         )
         const staffIdsSnapshot = await getDocs(staffIdsQuery)
-        console.log('🔍 Paraeducator query: staffIds approach found', staffIdsSnapshot.size, 'students')
         
         if (staffIdsSnapshot.size > 0) {
           const students = staffIdsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-          console.log('🔍 Paraeducator query: SUCCESS with staffIds approach')
           return students
         }
       } catch (staffIdsError) {
-        console.log('🔍 Paraeducator query: staffIds approach failed:', staffIdsError.message)
+        // Fall through to aideSchedules approach
       }
       
       // Fallback: Get aide's assigned students from aideSchedules
-      console.log('🔍 Paraeducator query: Using aideSchedules fallback...')
       
       // Get aide schedule document
       const aideDoc = await getDoc(doc(db, 'aideSchedules', userId))
       if (!aideDoc.exists()) {
-        console.log('🔍 Paraeducator query: No aide schedule document found for', userId)
         return []
       }
       
       const aideData = aideDoc.data()
-      console.log('🔍 Paraeducator query: Found aide data:', aideData)
       
       // Get student IDs from the aide's document
       let studentIds = []
@@ -301,23 +244,19 @@ export function useStudentQueries() {
       // Primary: Use studentIds array if available
       if (aideData.studentIds && Array.isArray(aideData.studentIds)) {
         studentIds = aideData.studentIds
-        console.log('🔍 Paraeducator query: Using studentIds array:', studentIds)
       }
       // Fallback: Use directAssignment if studentIds not available
       else if (aideData.directAssignment) {
         studentIds = Array.isArray(aideData.directAssignment) 
           ? aideData.directAssignment 
           : [aideData.directAssignment]
-        console.log('🔍 Paraeducator query: Using directAssignment as fallback:', studentIds)
       }
       
       if (studentIds.length === 0) {
-        console.log('🔍 Paraeducator query: No student assignments found for aide', userId)
         return []
       }
       
       // Query students individually to avoid Firestore rule issues
-      console.log('🔍 Paraeducator query: Fetching', studentIds.length, 'assigned students individually...')
       const studentPromises = studentIds.map(async (studentId) => {
         try {
           const studentDoc = await getDoc(doc(db, 'students', studentId))
@@ -326,7 +265,7 @@ export function useStudentQueries() {
           }
           return null
         } catch (error) {
-          console.warn('🔍 Paraeducator query: Failed to fetch student', studentId, ':', error.message)
+          console.warn('Failed to fetch student', studentId, ':', error.message)
           return null
         }
       })
@@ -341,29 +280,14 @@ export function useStudentQueries() {
         return aName.localeCompare(bName)
       })
       
-      console.log('🔍 Paraeducator query: Successfully fetched', validStudents.length, 'students')
       return validStudents
       
     } catch (error) {
       console.error('🔴 Paraeducator query FAILED:', error)
-      console.error('🔴 Error code:', error.code)
-      console.error('🔴 Error message:', error.message)
-      console.error('🔴 Full error object:', error)
       
-      // Check current auth state
+      // Security: Check auth state for debugging
       const auth = getAuth()
-      console.error('🔴 Current auth state:', {
-        uid: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        customClaims: 'Check in browser dev tools'
-      })
-      
-      // Check if the userId parameter matches the auth uid
-      console.error('🔴 Auth mismatch check:', {
-        queryUserId: userId,
-        authUid: auth.currentUser?.uid,
-        match: userId === auth.currentUser?.uid
-      })
+      console.error('🔴 Paraeducator auth mismatch - userId:', userId, 'authUid:', auth.currentUser?.uid)
       
       return []
     }
@@ -371,7 +295,6 @@ export function useStudentQueries() {
   
   // Testing view - students with testing flags
   const getTestingStudents = async () => {
-    console.log('🔍 Testing query: Loading students with testing flags')
     
     // Query for flag2 (primary field)
     const q1 = query(
@@ -413,17 +336,8 @@ export function useStudentQueries() {
   // ─── MAIN QUERY FUNCTION ─────────────────────────────────────────────────────
   
   const loadStudents = async (options = {}) => {
-    console.log('🔍 loadStudents called - DEBUG AUTH STATE:')
-    console.log('  currentUserId.value:', currentUserId.value)
-    console.log('  currentRole.value:', currentRole.value)
-    console.log('  authStore.user:', authStore.user)
-    console.log('  authStore.user?.uid:', authStore.user?.uid)
-    console.log('  authStore.user?.role:', authStore.user?.role)
-    
     if (!currentUserId.value || !currentRole.value) {
       console.error('🔴 No authenticated user or role - FAILING AUTH CHECK')
-      console.error('  currentUserId.value is:', currentUserId.value)
-      console.error('  currentRole.value is:', currentRole.value)
       error.value = 'Authentication required'
       return []
     }
@@ -434,8 +348,7 @@ export function useStudentQueries() {
     try {
       let studentData = []
       
-      console.log('🔍 ROUTING to query based on role:', currentRole.value)
-      console.log('🔍 Available role cases: admin, school_admin, staff_view, staff_edit, admin_504, sped_chair, case_manager, teacher, service_provider, paraeducator')
+
       
       // Route to appropriate query based on role
       switch (currentRole.value) {
@@ -456,9 +369,7 @@ export function useStudentQueries() {
           studentData = await getAdmin504Students()
           break
         case 'case_manager':
-          console.log('🔍 CALLING getCaseManagerStudents with userId:', currentUserId.value)
           studentData = await getCaseManagerStudents(currentUserId.value)
-          console.log('🔍 getCaseManagerStudents COMPLETED, returned:', studentData.length, 'students')
           break
           
         case 'teacher':
@@ -470,9 +381,7 @@ export function useStudentQueries() {
           break
           
         case 'paraeducator':
-          console.log('🔍 PARAEDUCATOR QUERY: Starting query for userId:', currentUserId.value)
           studentData = await getParaeducatorStudents(currentUserId.value)
-          console.log('🔍 PARAEDUCATOR QUERY: Query completed, returned:', studentData.length, 'students')
           break
           
         default:
@@ -489,7 +398,6 @@ export function useStudentQueries() {
       students.value = studentData
       totalCount.value = studentData.length
       
-      console.log(`🟢 Loaded ${studentData.length} students for ${currentRole.value}`)
       return studentData
       
     } catch (err) {

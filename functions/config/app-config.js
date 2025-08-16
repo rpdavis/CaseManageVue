@@ -4,10 +4,10 @@
 module.exports = {
   // ─── FIREBASE PROJECT CONFIGURATION ─────────────────────────────────────────
   firebase: {
-    projectId: process.env.FIREBASE_PROJECT_ID || 'casemangervue',
+    projectId: process.env.FIREBASE_PROJECT_ID || 'casemanagevue-jepson-prod',
     region: process.env.FIREBASE_REGION || 'us-central1',
     storageRegion: process.env.FIREBASE_STORAGE_REGION || 'us-west1',
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'casemangervue.appspot.com'
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'casemanagevue-jepson-prod.firebasestorage.app'
   },
 
   // ─── FUNCTION CONFIGURATION ────────────────────────────────────────────────

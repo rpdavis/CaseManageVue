@@ -126,7 +126,7 @@
                   <option value="app.schedule.periods.4">Period 4 Teacher ID</option>
                   <option value="app.schedule.periods.5">Period 5 Teacher ID</option>
                   <option value="app.schedule.periods.6">Period 6 Teacher ID</option>
-                  <option value="app.schedule.periods.SH">Study Hall Teacher ID</option>
+                  <option value="app.schedule.periods.7">Period 7 Teacher ID</option>
                   <option value="app.schedule.classServices">Class Services (Comma-separated)</option>
                 </optgroup>
                 <optgroup label="Service Providers">
@@ -512,6 +512,9 @@ const parseCSV = (text) => {
 }
 
 const autoMapCommonFields = () => {
+  console.log('🔧 DEBUG: Auto-mapping started')
+  console.log('🔧 DEBUG: csvHeaders.value:', csvHeaders.value)
+  
   const commonMappings = {
     // Basic Student Info - Top Level and App
     'SSID': 'app.studentData.ssid',
@@ -533,7 +536,7 @@ const autoMapCommonFields = () => {
     'Period4Teacher': 'app.schedule.periods.4',
     'Period5Teacher': 'app.schedule.periods.5',
     'Period6Teacher': 'app.schedule.periods.6',
-    'PeriodSHTeacher': 'app.schedule.periods.SH',
+    'Period7Teacher': 'app.schedule.periods.7',
     
     // Class Services
     'ClassServices': 'app.schedule.classServices',
@@ -567,11 +570,21 @@ const autoMapCommonFields = () => {
     'Instruction': 'app.accommodations.instruction'
   }
 
+  console.log('🔧 DEBUG: commonMappings keys:', Object.keys(commonMappings))
+  
+  let mappedCount = 0
   csvHeaders.value.forEach(header => {
     if (commonMappings[header]) {
       fieldMapping.value[header] = commonMappings[header]
+      mappedCount++
+      console.log(`🔧 DEBUG: Mapped ${header} -> ${commonMappings[header]}`)
+    } else {
+      console.log(`🔧 DEBUG: No mapping for header: "${header}"`)
     }
   })
+  
+  console.log(`🔧 DEBUG: Auto-mapping complete. Mapped ${mappedCount} fields.`)
+  console.log('🔧 DEBUG: fieldMapping.value:', fieldMapping.value)
 }
 
 const clearAllMappings = () => {
@@ -1044,7 +1057,7 @@ const importSingleStudent = async (studentData) => {
           meetingDate: studentData.app.dates.meetingDate || ""
         },
         
-        schedule: {
+                schedule: {
           periods: studentData.app.schedule.periods || {
             1: "",
             2: "",
@@ -1052,10 +1065,10 @@ const importSingleStudent = async (studentData) => {
             4: "",
             5: "",
             6: "",
-            SH: ""
+            7: ""
           },
           classServices: Array.isArray(studentData.app.schedule.classServices) ? 
-            studentData.app.schedule.classServices : []
+studentData.app.schedule.classServices : []
         },
         
         providers: studentData.app.providers || {

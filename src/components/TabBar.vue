@@ -56,7 +56,7 @@ export default {
 </script>
 
 <style scoped>
-/* Styles are in admin-panel.css */
+/* Component styles included in main.css */
 
 .status-indicator {
   margin-left: 6px;

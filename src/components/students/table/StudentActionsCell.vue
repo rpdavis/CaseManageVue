@@ -1,5 +1,5 @@
 <template>
-  <td class="actions-cell">
+  <td class="actions-column">
     <div class="actions-content">
       <div class="action-buttons">
         <!-- Only show Edit for admins/sped_chair or case managers on their own caseload -->

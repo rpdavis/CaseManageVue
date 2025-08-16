@@ -1,5 +1,5 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { useGoogleSheetsRealtime } from '@/composables/useGoogleSheetsRealtime'
+import { useGoogleSheetsRealtime, globalAuthState } from '@/composables/useGoogleSheetsRealtime'
 
 export function useGoogleSheetsIntegration(students, users, testingData) {
   const { generateCSV, downloadCSV } = testingData
@@ -41,10 +41,15 @@ export function useGoogleSheetsIntegration(students, users, testingData) {
       if (linkedSheetId.value) {
         const isConnected = await checkSheetConnection()
         if (isConnected) {
-          // Do an initial sync
-          await syncNow()
-          // Start the hourly auto-sync
-          setupAutoSync()
+          // Only sync if we have valid authentication
+          if (globalAuthState.isInitialized.value && globalAuthState.accessToken.value) {
+            // Do an initial sync
+            await syncNow()
+            // Start the hourly auto-sync
+            setupAutoSync()
+          } else {
+            console.log('🔍 Google Auth not fully ready, skipping initial sync')
+          }
         }
       }
     } catch (error) {

@@ -17,7 +17,7 @@
           <label>Teacher:</label>
           <select v-model="teacherId">
             <option value="">Select teacher...</option>
-            <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.name || t.email || t.id }}</option>
+            <option v-for="t in sortedTeachers" :key="t.id" :value="t.id">{{ t.name || t.email || t.id }}</option>
           </select>
         </div>
         <div class="form-row" v-if="type === 'student'">
@@ -94,6 +94,19 @@ watch(() => props.assignment, (val) => {
     note.value = ''
   }
 }, { immediate: true })
+
+const sortedTeachers = computed(() => {
+  const teachers = props.teachers || []
+  return teachers.sort((a, b) => {
+    // Extract last names for sorting
+    const getLastName = (user) => {
+      const fullName = user.name || user.email || user.id
+      const nameParts = fullName.split(' ')
+      return nameParts.length > 1 ? nameParts[nameParts.length - 1] : fullName
+    }
+    return getLastName(a).localeCompare(getLastName(b))
+  })
+})
 
 const label = computed(() => {
   if (type.value === 'lunch') return 'Lunch'

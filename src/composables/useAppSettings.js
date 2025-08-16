@@ -8,8 +8,7 @@ const DEFAULT_SETTINGS = {
     { name: 'SDC', subcategories: ['English', 'Math', 'History', 'Science'], enabledSubcategories: ['English', 'Math', 'History', 'Science'] },
     { name: 'Co-teach', subcategories: ['English', 'Math', 'History', 'Science'], enabledSubcategories: ['English', 'Math', 'History', 'Science'] },
     { name: 'RSP', subcategories: ['English', 'Math', 'History', 'Science'], enabledSubcategories: ['English', 'Math', 'History', 'Science'] },
-    { name: 'Directed Studies', subcategories: ['Directed Studies'], enabledSubcategories: ['Directed Studies'] },
-    { name: 'FA', subcategories: ['FA'], enabledSubcategories: ['FA'] }
+    { name: 'Other', subcategories: ['FA', 'Directed Studies', 'DS: Reading Intv'], enabledSubcategories: ['FA', 'Directed Studies', 'DS: Reading Intv'] }
   ],
   sdcSubcategories: [],
   customClassServices: [],
@@ -34,7 +33,7 @@ let isInitialized = false
 export function useAppSettings() {
   const settingsDocRef = doc(db, 'app_settings', 'global')
 
-  const loadAppSettings = async () => {
+    const loadAppSettings = async () => {
     if (loading.value) {
       return new Promise((resolve) => {
         const unwatch = watch(loading, (newLoading) => {
@@ -56,14 +55,8 @@ export function useAppSettings() {
       const docSnap = await getDoc(settingsDocRef)
       appSettings.value = docSnap.exists() ? docSnap.data() : { ...DEFAULT_SETTINGS }
       
-      // Auto-check Gmail API status on load if not already set
-      if (!appSettings.value.gmailApi?.lastCheck) {
-        try {
-          await checkGmailApiStatus()
-        } catch (gmailError) {
-          console.warn('Could not auto-check Gmail API status:', gmailError)
-        }
-      }
+      // Note: Auto-check Gmail API removed to prevent infinite loops
+      // Users can manually check Gmail API status from the App Settings page
     } catch (e) {
       appSettings.value = { ...DEFAULT_SETTINGS }
     } finally {
@@ -79,7 +72,7 @@ export function useAppSettings() {
     error.value = null
     
     try {
-      const settingsRef = doc(db, 'app_settings', 'general')
+      const settingsRef = doc(db, 'app_settings', 'global')
       await setDoc(settingsRef, settings)
       
       // Update the reactive appSettings after successful save
@@ -132,38 +125,39 @@ export function useAppSettings() {
   // Check if Google Workspace and internal OAuth are configured
   const checkGmailApiStatus = async () => {
     try {
-      // Use the dynamic check from Firebase
-      const { checkAndAddGmailScope } = await import('@/firebase')
-      const gmailScopeAdded = await checkAndAddGmailScope()
+      // Skip OAuth validation to avoid authentication issues
+      console.log('ℹ️ Skipping OAuth validation to avoid authentication issues');
+      const gmailScopeAdded = false
       
       // Try to get more detailed info about the OAuth setup
       let isWorkspace = false
       let isInternalOAuth = gmailScopeAdded
       
       try {
-        // Skip OAuth validation for now to avoid authentication issues
-        // This can be re-enabled later when OAuth is properly configured
-        console.log('ℹ️ Skipping OAuth validation to avoid authentication issues');
-        isWorkspace = false;
+        const response = await fetch('https://oauth2.googleapis.com/tokeninfo')
+        if (response.ok) {
+          const data = await response.json()
+          isWorkspace = data.hd && data.hd.includes('.')
+        }
       } catch (tokenError) {
         console.warn('Could not get detailed OAuth info:', tokenError)
       }
 
-      // Update settings
-      const newSettings = {
-        ...appSettings.value,
-        gmailApi: {
-          enabled: gmailScopeAdded,
-          isWorkspace,
-          isInternalOAuth,
-          lastCheck: new Date().toISOString()
-        }
+      // Update settings in memory only (don't auto-save to prevent infinite loops)
+      const gmailApiStatus = {
+        enabled: gmailScopeAdded,
+        isWorkspace,
+        isInternalOAuth,
+        lastCheck: new Date().toISOString()
       }
 
-      // Save the updated settings
-      await saveAppSettings(newSettings)
+      // Update the reactive settings without saving
+      appSettings.value = {
+        ...appSettings.value,
+        gmailApi: gmailApiStatus
+      }
 
-      return newSettings.gmailApi
+      return gmailApiStatus
     } catch (error) {
       console.error('Failed to check Gmail API status:', error)
       return {

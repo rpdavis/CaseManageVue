@@ -69,7 +69,7 @@ service cloud.firestore {
       return isStaffView() || isStaffEdit();
     }
     
-    // Combined admin and staff view/edit roles - for read access
+    // Combined admin roles - for read access (staff_view and staff_edit have full access but need special handling)
     function hasFullReadAccess() {
       return isAnyAdmin() || isStaffViewOrEdit();
     }
@@ -145,7 +145,12 @@ service cloud.firestore {
       let doc = resource.data;
       
       return hasFullReadAccess() ||
-             // Primary array check
+             // SPED Chair - can see all IEP students OR students they work with directly (including 504 if assigned)
+             (isSpedChair() && (
+               (doc.app.studentData.plan == 'IEP') ||
+               (doc.app.staffIds != null && uid() in doc.app.staffIds)
+             )) ||
+             // Primary array check for staff
              (isStaffRole() && doc.app.staffIds != null && uid() in doc.app.staffIds) ||
              // Fallback for case managers
              (isCaseManager() && doc.app.studentData.caseManagerId == uid()) ||
@@ -161,16 +166,21 @@ service cloud.firestore {
              (isAdmin504() && 
               doc.app.studentData.plan == '504' &&
               request.resource.data.app.studentData.plan == '504') ||
-             // Sped chair can edit all students
-             isSpedChair() ||
+             // SPED Chair - can edit all IEP students OR students they work with directly
+             (isSpedChair() && (
+               (doc.app.studentData.plan == 'IEP') ||
+               (doc.app.staffIds != null && uid() in doc.app.staffIds)
+             )) ||
              // Case managers can edit students on their caseload
              (isCaseManager() && doc.app.studentData.caseManagerId == uid());
     }
     
     // Query validation: ensure proper filtering
     function validStudentQuery() {
-      // Admins and staff view/edit can query without restrictions
+      // Only full admins can query without restrictions
       return hasFullReadAccess() ||
+             // SPED Chair must use filtered queries
+             (isSpedChair() && hasSpedChairValidQuery()) ||
              // Case managers can query (will be filtered by access control)
              isCaseManager() ||
              // Other staff with valid filters
@@ -184,6 +194,20 @@ service cloud.firestore {
       return request.query.where != null &&
              (hasStaffIdsFilter() || 
               (isCaseManager() && hasCaseManagerIdFilter()));
+    }
+    
+    // SPED Chair query validation - must filter by IEP plan OR staffIds
+    function hasSpedChairValidQuery() {
+      return request.query.where != null &&
+             request.query.where.size() > 0 &&
+             (
+               // Must filter by IEP plan
+               (request.query.where[0][0] == 'app.studentData.plan' && 
+                request.query.where[0][1] == '==' && 
+                request.query.where[0][2] == 'IEP') ||
+               // OR must use staffIds filter
+               hasStaffIdsFilter()
+             );
     }
     
     // Check for staffIds filter - search through all where clauses

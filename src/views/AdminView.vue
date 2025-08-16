@@ -440,7 +440,7 @@ export default {
 </script>
 
 <style scoped>
-/* Styles are in admin-panel.css */
+/* Admin panel styles now included in main.css */
 
 .admin-header {
   display: flex;
