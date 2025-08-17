@@ -64,7 +64,8 @@ class SessionTimeoutManager {
       this.unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
         if (doc.exists()) {
           const data = doc.data()
-          const newEnabled = data.sessionTimeoutEnabled || false
+          // More defensive: check for explicit false, otherwise default to true
+          const newEnabled = data.sessionTimeoutEnabled !== false
           const newMinutes = data.sessionTimeoutMinutes || 30
           
           console.log(`🔧 Session timeout settings updated: enabled=${newEnabled}, timeout=${newMinutes}min`)
@@ -78,22 +79,46 @@ class SessionTimeoutManager {
             this.resetTimeout()
           }
         } else {
-          // No settings document exists, use defaults
-          console.log('🔧 No session timeout settings found, using defaults')
-          this.isEnabled.value = false
+          // No settings document exists, create it with defaults
+          console.log('🔧 No session timeout settings found, creating with defaults')
+          const defaultSettings = {
+            sessionTimeoutEnabled: true,
+            sessionTimeoutMinutes: 30,
+            createdAt: new Date().toISOString(),
+            createdBy: 'system_auto_create'
+          }
+          
+          // Create the document
+          setDoc(settingsRef, defaultSettings, { merge: true }).catch(error => {
+            console.error('Failed to create default session timeout settings:', error)
+          })
+          
+          // Set local values
+          this.isEnabled.value = true
           this.timeoutMinutes.value = 30
         }
       }, (error) => {
         console.error('Failed to load session timeout settings:', error)
-        // Use defaults on error
-        this.isEnabled.value = false
+        // Use defaults on error - but still try to create the document
+        this.isEnabled.value = true
         this.timeoutMinutes.value = 30
+        
+        // Try to create the missing document
+        const defaultSettings = {
+          sessionTimeoutEnabled: true,
+          sessionTimeoutMinutes: 30,
+          createdAt: new Date().toISOString(),
+          createdBy: 'system_error_recovery'
+        }
+        setDoc(settingsRef, defaultSettings, { merge: true }).catch(err => {
+          console.error('Failed to create session timeout settings during error recovery:', err)
+        })
       })
       
     } catch (error) {
       console.error('Failed to setup session timeout settings listener:', error)
       // Use defaults on error
-      this.isEnabled.value = false
+      this.isEnabled.value = true
       this.timeoutMinutes.value = 30
     }
   }
