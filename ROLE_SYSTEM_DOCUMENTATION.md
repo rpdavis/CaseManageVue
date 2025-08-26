@@ -258,3 +258,6 @@ This maintains the intended behavior:
 5. **Expected:** See ALL students in that teacher's class periods (not just IEP/504)
 6. **Switch back to List View** 
 7. **Expected:** See only IEP/504 students (provider filtering active)
+
+
+

@@ -23,12 +23,21 @@
             </template>
           </template>
           <template v-else>
+            <!-- Fallback: appSettings not available, using hardcoded providers -->
             <span v-if="getServiceProviderId(student, 'speechId')" class="service-provider-item">SP ({{ getUserInitialLastName(getServiceProviderId(student, 'speechId')) }})</span>
             <span v-if="getServiceProviderId(student, 'mhId')" class="service-provider-item">MH ({{ getUserInitialLastName(getServiceProviderId(student, 'mhId')) }})</span>
             <span v-if="getServiceProviderId(student, 'otId')" class="service-provider-item">OT ({{ getUserInitialLastName(getServiceProviderId(student, 'otId')) }})</span>
             <span v-if="getServiceProviderId(student, 'ptId')" class="service-provider-item">PT ({{ getUserInitialLastName(getServiceProviderId(student, 'ptId')) }})</span>
             <span v-if="getServiceProviderId(student, 'scId')" class="service-provider-item">SC ({{ getUserInitialLastName(getServiceProviderId(student, 'scId')) }})</span>
             <span v-if="getServiceProviderId(student, 'trId')" class="service-provider-item">TR ({{ getUserInitialLastName(getServiceProviderId(student, 'trId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'dhhId')" class="service-provider-item">DHH ({{ getUserInitialLastName(getServiceProviderId(student, 'dhhId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'audId')" class="service-provider-item">AUD ({{ getUserInitialLastName(getServiceProviderId(student, 'audId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'viId')" class="service-provider-item">VI ({{ getUserInitialLastName(getServiceProviderId(student, 'viId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'atId')" class="service-provider-item">AT ({{ getUserInitialLastName(getServiceProviderId(student, 'atId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'omId')" class="service-provider-item">O&M ({{ getUserInitialLastName(getServiceProviderId(student, 'omId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'bisId')" class="service-provider-item">BIS ({{ getUserInitialLastName(getServiceProviderId(student, 'bisId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'hnId')" class="service-provider-item">HN ({{ getUserInitialLastName(getServiceProviderId(student, 'hnId')) }})</span>
+            <span v-if="getServiceProviderId(student, 'swId')" class="service-provider-item">SW ({{ getUserInitialLastName(getServiceProviderId(student, 'swId')) }})</span>
           </template>
         </div>
       </div>

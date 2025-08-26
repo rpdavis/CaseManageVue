@@ -42,16 +42,17 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th>Title</th>
+            <th>Testing Access</th>
             <th>Email</th>
             <th>Role</th>
             <th>Provider Type</th>
+            
             <th style="text-align:center;">Actions</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="users.length === 0">
-            <td colspan="5">No users found.</td>
+            <td colspan="6">No users found.</td>
           </tr>
           <tr 
             v-for="user in users" 
@@ -68,14 +69,27 @@
                 @input="updateUserField(user.id, 'name', $event.target.value)"
               />
             </td>
-            <td>
-              <input 
-                type="text" 
-                :value="user.title || ''" 
-                class="editable-input"
-                :disabled="activeRowId !== user.id"
-                @input="updateUserField(user.id, 'title', $event.target.value)"
-              />
+                <!-- Testing Access Column -->
+                <td>
+              <!-- Full Access Roles: Show read-only checkmark (always have access) -->
+              <span v-if="hasFullReadAccess(user.role)" class="testing-access-full" title="Full access role - always has testing access">
+                <Check :size="16" class="check-icon" />
+                Always
+              </span>
+              <!-- Limited Roles: Show editable dropdown when editing -->
+              <select 
+                v-else-if="activeRowId === user.id"
+                class="editable-select"
+                :value="editingUser.testingAccess ? 'true' : 'false'"
+                @change="updateUserField(user.id, 'testingAccess', $event.target.value === 'true')"
+              >
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+              <!-- Limited Roles: Show badge when not editing -->
+              <span v-else class="testing-access-badge" :class="{ active: user.testingAccess }">
+                {{ user.testingAccess ? 'Yes' : 'No' }}
+              </span>
             </td>
             <td>{{ user.email }}</td>
             <td>
@@ -109,6 +123,7 @@
             <td v-else>
               <span>Loading...</span>
             </td>
+        
             <td class="admin-action-btns">
               <!-- View Mode -->
               <template v-if="activeRowId !== user.id">
@@ -176,7 +191,7 @@ import { VALID_ROLES } from '../config/roles.js'
 import { useAppSettings } from '@/composables/useAppSettings'
 import { useAdminPanelPermissions } from '@/composables/useAdminPanelPermissions'
 import { auditLogger } from '@/utils/auditLogger'
-import { Edit, Save, X, Trash2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Edit, Save, X, Trash2, ChevronLeft, ChevronRight, Check } from 'lucide-vue-next'
 
 const PAGE_SIZE = 20
 
@@ -217,6 +232,12 @@ const providersLoaded = computed(() =>
 const serviceProviders = computed(() => {
   return appSettings.value?.serviceProviders || []
 })
+
+// Check if user role has full read access (matches Firestore rules logic)
+const hasFullReadAccess = (userRole) => {
+  const fullAccessRoles = ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+  return fullAccessRoles.includes(userRole)
+}
 
 const showStatus = (message, error = false) => {
   statusMessage.value = message
@@ -291,7 +312,11 @@ const fetchUsers = async (pageDirection = 'first') => {
 const startEdit = (userId) => {
   if (activeRowId.value) return
   activeRowId.value = userId
-  editingUser.value = { ...users.value.find(u => u.id === userId) }
+  const user = users.value.find(u => u.id === userId)
+  editingUser.value = { 
+    ...user,
+    testingAccess: user.testingAccess || false
+  }
 }
 
 const cancelEdit = () => {
@@ -319,6 +344,7 @@ const saveUser = async (userId) => {
     if (editingUser.value.title !== undefined) updateData.title = editingUser.value.title?.trim() || null
     if (editingUser.value.role !== undefined) updateData.role = editingUser.value.role
     if (editingUser.value.provider !== undefined) updateData.provider = editingUser.value.provider || null
+    if (editingUser.value.testingAccess !== undefined) updateData.testingAccess = editingUser.value.testingAccess
 
     await updateDoc(doc(db, 'users', userId), updateData)
     
@@ -328,7 +354,8 @@ const saveUser = async (userId) => {
         name: originalUser?.name,
         title: originalUser?.title,
         role: originalUser?.role,
-        provider: originalUser?.provider
+        provider: originalUser?.provider,
+        testingAccess: originalUser?.testingAccess
       },
       updatedData: updateData,
       changedFields: Object.keys(updateData)
@@ -723,5 +750,35 @@ onUnmounted(() => {
   background: #6c757d;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* Testing Access Styles */
+.testing-access-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: #f8f9fa;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+}
+
+.testing-access-badge.active {
+  background: #d4edda;
+  color: #155724;
+  border-color: #c3e6cb;
+}
+
+.testing-access-full {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #28a745;
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.testing-access-full .check-icon {
+  color: #28a745;
 }
 </style>

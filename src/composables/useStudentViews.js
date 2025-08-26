@@ -1,6 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import { getDisplayValue } from '@/utils/studentUtils'
 import { setClassViewPeriods } from '@/utils/debugSummary'
+import { useTestingAccommodations } from '@/composables/useTestingAccommodations'
 
 export function useStudentViews(studentData, filterData, roleBasedStudents = null) {
   const {
@@ -20,6 +21,9 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
   // Use role-based students if provided (for security), otherwise fall back to general filtered students
   const studentsToUse = roleBasedStudents || filteredStudents
 
+  // Testing accommodations composable for secure testing access
+  const { testingData, hasTestingAccess, fetchTestingData } = useTestingAccommodations()
+
   // View mode state
   const currentViewMode = ref('list')
 
@@ -33,8 +37,43 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
 
   // Get students for testing view (only those with separate setting)
   const testingViewStudents = computed(() => {
+    const user = currentUser.value
+    if (!user) return []
+    
+    // HIERARCHY 1: Full access roles ALWAYS have complete access (ignore testingAccess field)
+    const fullAccessRoles = ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+    if (fullAccessRoles.includes(user.role)) {
+      return studentsToUse.value.filter(student => {
+        return student.app?.flags?.flag2 || student.app?.flags?.separateSetting || student.separateSetting || student.flag2 || false
+      })
+    }
+    
+    // HIERARCHY 2: Non-admin roles with testingAccess see filtered data from testingAccommodations collection
+    if (user.testingAccess === true) {
+      console.log('🔍 Testing Access: User has testingAccess=true')
+      console.log('🔍 Testing Access: testingData.value:', testingData.value)
+      console.log('🔍 Testing Access: testingData.value.length:', testingData.value.length)
+      console.log('🔍 Testing Access: hasTestingAccess.value:', hasTestingAccess.value)
+      
+      // Apply search filtering to testing data (same logic as regular filtering)
+      let filteredTestingData = testingData.value
+      
+      // Apply search filter if active
+      if (currentFilters.search && currentFilters.search.trim()) {
+        const searchTerm = currentFilters.search.toLowerCase()
+        filteredTestingData = filteredTestingData.filter(student => {
+          const firstName = getDisplayValue(student, 'firstName', '').toLowerCase()
+          const lastName = getDisplayValue(student, 'lastName', '').toLowerCase()
+          return firstName.includes(searchTerm) || lastName.includes(searchTerm)
+        })
+        console.log('🔍 Testing Access: Applied search filter, results:', filteredTestingData.length)
+      }
+      
+      return filteredTestingData
+    }
+    
+    // HIERARCHY 3: Regular users see their assigned students with testing accommodations
     return studentsToUse.value.filter(student => {
-      // Check flag2 (primary field) and separateSetting (alias) for backward compatibility
       return student.app?.flags?.flag2 || student.app?.flags?.separateSetting || student.separateSetting || student.flag2 || false
     })
   })
@@ -266,6 +305,10 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
     testingViewStudents,
     
     // Methods
-    setViewMode
+    setViewMode,
+    
+    // Testing access methods
+    fetchTestingData,
+    hasTestingAccess
   }
 } 

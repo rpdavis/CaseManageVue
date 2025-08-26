@@ -1,6 +1,9 @@
 <template>
   <div class="login-container">
-    <h1>Case Manager Portal</h1>
+    <div class="logo-container">
+      <img src="@/assets/images/logo.png" alt="CaseManageVue Logo" class="logo" />
+      <h1>Case Manager Portal</h1>
+    </div>
     <p>Please sign in with your Google account:</p>
     <button @click="handleGoogleLogin" class="primary-btn">
       Sign in with Google
@@ -54,6 +57,28 @@ const handleGoogleLogin = async () => {
   height: 100vh;
   text-align: center;
 }
+
+.logo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.logo {
+  width: 300px;
+  height: auto;
+  margin-bottom: 0.5rem;
+}
+
+.portal-text {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e40af;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
 .primary-btn {
   background-color: #4285f4;
   color: white;
@@ -64,6 +89,7 @@ const handleGoogleLogin = async () => {
   font-size: 16px;
   margin-top: 1rem;
 }
+
 .primary-btn:hover {
   background-color: #357ae8;
 }

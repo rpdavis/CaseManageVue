@@ -11,6 +11,7 @@ import { auditLogger } from '@/utils/auditLogger'
 export function useStudentTable(props) {
   // Load app settings for dynamic services and providers
   const { appSettings, loadAppSettings, loading: appSettingsLoading, error: appSettingsError } = useAppSettings()
+  console.log('🔍 STUDENT TABLE: appSettings after useAppSettings():', appSettings.value)
   const { getLabel } = usePeriodLabels()
   
   onMounted(async () => {
@@ -384,11 +385,22 @@ export function useStudentTable(props) {
   }
 
   const getServiceProviderId = (student, type) => {
-    const providerId = student.app?.providers?.[type] || 
-                      student[type] || 
-                      student[type.replace('Id', '_id')] ||
-                      null
-    return providerId
+    // Check new nested structure first
+    let providerId = student.app?.providers?.[type]
+    
+    // If not found, check legacy flat structure
+    if (!providerId) {
+      providerId = student[type]
+    }
+    
+    // If still not found, check underscore format
+    if (!providerId) {
+      providerId = student[type.replace('Id', '_id')]
+    }
+    
+
+    
+    return providerId || null
   }
 
   const getProviderFieldName = (abbr) => {

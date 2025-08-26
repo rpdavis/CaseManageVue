@@ -245,6 +245,10 @@ const props = defineProps({
   aideSchedule: {
     type: Object,
     default: () => ({})
+  },
+  appSettings: {
+    type: Object,
+    default: null
   }
 })
 

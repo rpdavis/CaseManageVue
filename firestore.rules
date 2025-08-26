@@ -108,6 +108,13 @@ service cloud.firestore {
       return uid() == userId;
     }
     
+    // Testing access helper function - Uses existing hasFullReadAccess() for consistency
+    function hasTestingAccess() {
+      // Full read access roles always have access regardless of testingAccess field
+      return hasFullReadAccess() || 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.testingAccess == true;
+    }
+    
     // ─── DATA VALIDATION ──────────────────────────────────────────────────────
     // Validate data structure matches expected format
     function validEncryptedFields() {
@@ -163,6 +170,8 @@ service cloud.firestore {
       let doc = resource.data;
       
       return isSuperAdmin() ||
+             // Staff Edit role can edit all students
+             isStaffEdit() ||
              (isAdmin504() && 
               doc.app.studentData.plan == '504' &&
               request.resource.data.app.studentData.plan == '504') ||
@@ -263,7 +272,7 @@ service cloud.firestore {
     match /students/{studentId} {
       allow read: if isAuth() && hasValidRole() && canReadStudent(studentId);
       allow list: if isAuth() && hasValidRole() && validStudentQuery();
-      allow create: if isAuth() && isAnyAdmin() && validEncryptedFields();
+      allow create: if isAuth() && (isAnyAdmin() || isStaffEdit() || isCaseManager()) && validEncryptedFields();
       allow update: if isAuth() && hasValidRole() && canEditStudent(studentId) && validEncryptedFields();
       allow delete: if isAuth() && isSuperAdmin();
     }
@@ -379,6 +388,15 @@ service cloud.firestore {
       allow create: if isAuth() && hasValidRole();
       allow update: if isAuth() && hasValidRole();
       allow delete: if isAuth() && isAnyAdmin();
+    }
+    
+    // Testing accommodations collection - Secure filtered data for testing proctors
+    match /testingAccommodations/{studentId} {
+      allow read: if isAuth() && (
+        isAnyAdmin() ||
+        hasTestingAccess()
+      );
+      allow write: if false; // Only Cloud Functions can write
     }
     
     // Default deny

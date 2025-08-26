@@ -760,7 +760,7 @@ export function useStudentForm(props, emit) {
         // Use Firebase auto-generated ID for security
         const docRef = doc(collection(db, 'students'))
         payload.createdAt = serverTimestamp()
-        await setDoc(docRef, payload)
+        await setDoc(docRef, payload, { merge: true })
         newStudentId = docRef.id
         payload.id = newStudentId
         console.log('Student added successfully with ID:', newStudentId, 'SSID:', ssid)

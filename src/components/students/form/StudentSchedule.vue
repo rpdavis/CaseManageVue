@@ -65,7 +65,7 @@
                 :value="getCoTeachingCaseManager(period)"
                 @change="updateCoTeachingCaseManager(period, $event.target.value)"
                 class="cm-select"
-                required
+                
               >
                 <option value="">-- Select Case Manager --</option>
                 <option 

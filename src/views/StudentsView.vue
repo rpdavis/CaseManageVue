@@ -183,6 +183,7 @@
           :can-access-testing="canAccessTesting"
           :can-access-testing-partial="canAccessTestingPartial"
           :aide-schedule="currentUser?.role === 'paraeducator' ? aideAssignment : {}"
+          :app-settings="appSettings"
           @edit="editStudent"
           @email="emailStudent"
           @teacher-feedback="handleTeacherFeedback"
@@ -205,6 +206,7 @@
             :can-access-testing="canAccessTesting"
             :can-access-testing-partial="canAccessTestingPartial"
             :aide-schedule="currentUser?.role === 'paraeducator' ? aideAssignment : {}"
+            :app-settings="appSettings"
             @edit="editStudent"
             @email="emailStudent"
             @teacher-feedback="handleTeacherFeedback"
@@ -225,6 +227,7 @@
             :can-access-testing="canAccessTesting"
             :can-access-testing-partial="canAccessTestingPartial"
             :aide-schedule="currentUser?.role === 'paraeducator' ? aideAssignment : {}"
+            :app-settings="appSettings"
             @edit="editStudent"
             @email="emailStudent"
             @teacher-feedback="handleTeacherFeedback"
@@ -234,6 +237,12 @@
       
       <!-- Testing View -->
       <div v-else-if="currentViewMode === 'testing'" class="view-section">
+        <!-- Test Proctor label for testing access users (only non-full-access roles) -->
+        <div v-if="showTestProctorHeader" class="testing-proctor-header">
+          <h3 class="proctor-title">Test Proctor View</h3>
+          <p class="proctor-subtitle">Viewing testing accommodations for students with separate settings</p>
+        </div>
+        
         <StudentTable
           :students="testingViewStudents"
           :user-map="userMapObj"
@@ -246,6 +255,7 @@
           :can-access-testing-partial="canAccessTestingPartial"
           :testing-view="true"
           :aide-schedule="currentUser?.role === 'paraeducator' ? aideAssignment : {}"
+          :app-settings="appSettings"
           @edit="editStudent"
           @email="emailStudent"
           @teacher-feedback="handleTeacherFeedback"
@@ -315,6 +325,7 @@ import { useRoleBasedView } from '@/composables/roles/useRoleBasedView.js'
 import { useStudentViews } from '@/composables/useStudentViews.js'
 import { useStudentNavActions } from '@/composables/useStudentNavActions.js'
 import { useStudentQueries } from '@/composables/useStudentQueries.js'
+import { useAppSettings } from '@/composables/useAppSettings'
 
 // Lucide Icons
 import {
@@ -341,7 +352,32 @@ import TeacherFeedbackDialog from '@/components/students/TeacherFeedbackDialog.v
 // Initialize composables
 const studentData = useStudentData()
 const filterData = useStudentFilters(studentData)
-  const roleView = useRoleBasedView(studentData, filterData)
+const { appSettings } = useAppSettings()
+
+// Check if we should show the Test Proctor header
+const showTestProctorHeader = computed(() => {
+  const user = currentUser.value
+  if (!user) return false
+  
+  // Full access roles don't need the proctor header (they see everything)
+  const fullAccessRoles = ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+  
+  // Only show for non-full-access users with testingAccess = true
+  return !fullAccessRoles.includes(user.role) && user.testingAccess === true
+})
+
+// Initialize testing data for users with testing access
+const initializeTestingData = async () => {
+  const user = authStore.currentUser
+  const fullAccessRoles = ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+  
+  if (user?.testingAccess === true && !fullAccessRoles.includes(user.role)) {
+    console.log('🔍 Initializing testing data for testing access user')
+    await fetchTestingData()
+  }
+}
+
+const roleView = useRoleBasedView(studentData, filterData)
 
 // Debug: Watch for paraeducator visible students changes
 console.log('🔍 STUDENTS VIEW DEBUG: Setting up watcher, currentRole:', roleView.currentRole?.value)
@@ -431,7 +467,10 @@ const {
   // Computed data
   studentsByClass,
   directAssignmentStudents,
-  testingViewStudents
+  testingViewStudents,
+  // Testing methods
+  fetchTestingData,
+  hasTestingAccess
 } = viewData
 
 const {
@@ -543,6 +582,26 @@ const selectedRadioText = computed(() => {
   
   return texts.length > 0 ? texts.join(' | ') : ''
 })
+
+// Initialize testing data for users with testing access when they switch to testing view
+watch(() => currentViewMode.value, async (newMode) => {
+  if (newMode === 'testing') {
+    const user = currentUser.value
+    const fullAccessRoles = ['admin', 'school_admin', 'staff_view', 'staff_edit', 'admin_504', 'sped_chair']
+    
+    console.log('🔍 Testing View: Switched to testing mode')
+    console.log('🔍 Testing View: User role:', user?.role)
+    console.log('🔍 Testing View: User testingAccess:', user?.testingAccess)
+    console.log('🔍 Testing View: Is full access role:', fullAccessRoles.includes(user?.role))
+    
+    if (user?.testingAccess === true && !fullAccessRoles.includes(user.role)) {
+      console.log('🔍 Testing view activated - fetching testing accommodations data')
+      await fetchTestingData()
+    }
+  }
+})
+
+
 </script>
 
 <style>
@@ -1095,6 +1154,80 @@ const selectedRadioText = computed(() => {
   .students-view .actions-column {
     display: none !important;
   }
+}
+
+/* Tooltip Styles - Restored */
+[data-tooltip] {
+  position: relative;
+  cursor: help;
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: pre-line;
+  z-index: 1000;
+  max-width: 300px;
+  word-wrap: break-word;
+  opacity: 0;
+  animation: tooltipFadeIn 0.2s ease-in-out 0.3s forwards;
+}
+
+[data-tooltip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.9);
+  z-index: 1000;
+  opacity: 0;
+  animation: tooltipFadeIn 0.2s ease-in-out 0.3s forwards;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Tooltip active class for JavaScript-triggered tooltips */
+.tooltip-active::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: pre-line;
+  z-index: 1000;
+  max-width: 300px;
+  word-wrap: break-word;
+  animation: tooltipFadeIn 0.2s ease-in-out forwards;
+}
+
+.tooltip-active::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.9);
+  z-index: 1000;
+  animation: tooltipFadeIn 0.2s ease-in-out forwards;
 }
 
 </style>

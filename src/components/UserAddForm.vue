@@ -50,6 +50,18 @@
           </label>
         </div>
         <div>
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              v-model="singleUser.testingAccess"
+            />
+            Testing Access - Can view testing accommodations for all students with separate settings
+          </label>
+          <small class="help-text">
+            Grants access to testing accommodations data for students requiring separate testing environments
+          </small>
+        </div>
+        <div>
           <label>
             Aeries ID:
             <input type="text" v-model="singleUser.aeriesId" placeholder="Optional Aeries Teacher ID" />
@@ -362,7 +374,8 @@ export default {
       provider: '',
       aeriesId: '',
       rm: '',
-      ext: ''
+      ext: '',
+      testingAccess: false
     })
 
     const selectedFile = ref(null)

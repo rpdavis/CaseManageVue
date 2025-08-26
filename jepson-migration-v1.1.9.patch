@@ -1,0 +1,506 @@
+From 688e1d72b4c91357259e82f87758d252e8436031 Mon Sep 17 00:00:00 2001
+From: rpdavis <bcrash01@yahoo.com>
+Date: Sat, 16 Aug 2025 13:47:56 -0700
+Subject: [PATCH 1/2] v1.1.9: Fix admin_504 and sped_chair class view filtering
+
+- Fixed admin_504 class view to show students when teacher filter is selected
+- Fixed sped_chair class view to work with teacher filtering and SP mode
+- Added co-teaching support to teacher filtering (shows students where user is primary or co-teacher)
+- Updated class view grouping logic to use selected teacher/paraeducator periods instead of current user
+- Migrated project files from jepson reference while preserving correct Firebase configuration
+- Restored correct Firebase config from v1.1.6 (casemangervue project instead of jepson)
+- Updated role-based view system to handle class view permissions correctly
+- Enhanced service provider filtering to include co-teaching relationships
+
+Key fixes:
+- Admin_504: Now shows students in class view when filtering by specific teacher
+- Sped_chair: Class view works in SP mode and with teacher filtering
+- Co-teaching: Ryan Davis 3rd period co-teaching students now appear correctly
+- Teacher filter: Matches both primary teachers and co-teachers (case managers)
+---
+ .../roles/useAdministrator504View.js          |  14 +++
+ src/composables/roles/useUnifiedRoleView.js   |  18 +++-
+ src/composables/useSessionTimeout.js          | 102 ++++++++++--------
+ src/composables/useStudentFilters.js          |  42 +++++++-
+ src/composables/useStudentViews.js            |  12 ++-
+ 5 files changed, 132 insertions(+), 56 deletions(-)
+
+diff --git a/src/composables/roles/useAdministrator504View.js b/src/composables/roles/useAdministrator504View.js
+index fb2a4e4..da497fa 100644
+--- a/src/composables/roles/useAdministrator504View.js
++++ b/src/composables/roles/useAdministrator504View.js
+@@ -44,6 +44,20 @@ export function useAdministrator504View(studentData, filterData) {
+   // Group for class view
+   const studentsByPeriod = computed(() => {
+     if (!currentUserId.value) return {}
++    
++    // If a specific teacher is selected in filters, group by that teacher's periods
++    const selectedTeacher = filterData.currentFilters.teacher
++    if (selectedTeacher && selectedTeacher !== 'all') {
++      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedTeacher)
++    }
++    
++    // If a specific paraeducator is selected, group by that paraeducator's periods  
++    const selectedParaeducator = filterData.currentFilters.paraeducator
++    if (selectedParaeducator && selectedParaeducator !== 'all') {
++      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedParaeducator)
++    }
++    
++    // Otherwise, group by current user's periods
+     return baseView.groupStudentsByPeriod(visibleStudents.value, currentUserId.value)
+   })
+ 
+diff --git a/src/composables/roles/useUnifiedRoleView.js b/src/composables/roles/useUnifiedRoleView.js
+index 411241e..78ae213 100644
+--- a/src/composables/roles/useUnifiedRoleView.js
++++ b/src/composables/roles/useUnifiedRoleView.js
+@@ -59,8 +59,8 @@ export function useUnifiedRoleView(studentData, filterData) {
+     })
+ 
+     // Special handling for roles that use database-level filtering (Pattern 1)
+-    // Paraeducators and teachers get their students from database queries - no additional filtering needed
+-    if (role === 'paraeducator' || role === 'teacher') {
++    // Paraeducators, teachers, and service providers get their students from database queries - no additional filtering needed
++    if (role === 'paraeducator' || role === 'teacher' || role === 'service_provider') {
+       console.log(`🔍 ${role.toUpperCase()} ROLE VIEW: Received ${baseStudents.length} students from database`)
+       console.log(`🔍 ${role.toUpperCase()} ROLE VIEW: Student names:`, baseStudents.map(s =>
+         `${s.app?.studentData?.firstName || 'Unknown'} ${s.app?.studentData?.lastName || 'Unknown'}`
+@@ -204,6 +204,20 @@ export function useUnifiedRoleView(studentData, filterData) {
+   // ─── CLASS VIEW GROUPING ────────────────────────────────────────────────────
+   const studentsByPeriod = computed(() => {
+     if (!currentUserId.value) return {}
++    
++    // If a specific teacher is selected in filters, group by that teacher's periods
++    const selectedTeacher = filterData.currentFilters.teacher
++    if (selectedTeacher && selectedTeacher !== 'all') {
++      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedTeacher)
++    }
++    
++    // If a specific paraeducator is selected, group by that paraeducator's periods
++    const selectedParaeducator = filterData.currentFilters.paraeducator
++    if (selectedParaeducator && selectedParaeducator !== 'all') {
++      return baseView.groupStudentsByPeriod(visibleStudents.value, selectedParaeducator)
++    }
++    
++    // Otherwise, group by current user's periods
+     return baseView.groupStudentsByPeriod(visibleStudents.value, currentUserId.value)
+   })
+ 
+diff --git a/src/composables/useSessionTimeout.js b/src/composables/useSessionTimeout.js
+index fa8f3ce..7f6e861 100644
+--- a/src/composables/useSessionTimeout.js
++++ b/src/composables/useSessionTimeout.js
+@@ -17,9 +17,9 @@ class SessionTimeoutManager {
+     this.router = null
+     this.unsubscribeSettings = null
+     
+-    // Activity events to monitor
++    // Activity events to monitor (removed mousemove for performance)
+     this.activityEvents = [
+-      'mousedown', 'mousemove', 'keypress', 'scroll', 
++      'mousedown', 'keypress', 'scroll', 
+       'touchstart', 'click', 'keydown'
+     ]
+     
+@@ -42,11 +42,13 @@ class SessionTimeoutManager {
+   setupAuthWatcher() {
+     onAuthStateChanged(auth, (user) => {
+       if (user) {
+-        // Start timeout when user logs in
++        console.log('🔧 User logged in, starting session timeout system')
++        // Start timeout when user logs in - longer delay to ensure settings are loaded
+         setTimeout(() => {
+           this.resetTimeout()
+-        }, 1000) // Small delay to ensure settings are loaded
++        }, 2000) // Increased delay to ensure settings listener is established
+       } else {
++        console.log('🔧 User logged out, clearing session timeouts')
+         // Clear timeouts when user logs out
+         this.clearTimeouts()
+         this.hideWarning()
+@@ -58,26 +60,41 @@ class SessionTimeoutManager {
+     try {
+       const settingsRef = doc(db, 'app_settings', 'security')
+       
+-      // Listen for real-time changes to security settings
++      // Use real-time listener to get updates when settings change in admin panel
+       this.unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
+         if (doc.exists()) {
+           const data = doc.data()
+-          const wasEnabled = this.isEnabled.value
+-          this.isEnabled.value = data.sessionTimeoutEnabled || false
+-          this.timeoutMinutes.value = data.sessionTimeoutMinutes || 30
++          const newEnabled = data.sessionTimeoutEnabled || false
++          const newMinutes = data.sessionTimeoutMinutes || 30
++          
++          console.log(`🔧 Session timeout settings updated: enabled=${newEnabled}, timeout=${newMinutes}min`)
++          
++          // Update local values
++          this.isEnabled.value = newEnabled
++          this.timeoutMinutes.value = newMinutes
+           
+           // Restart timeout with new settings if user is logged in
+           if (auth.currentUser) {
+             this.resetTimeout()
+           }
+         } else {
+-          // No settings document exists, create default
++          // No settings document exists, use defaults
++          console.log('🔧 No session timeout settings found, using defaults')
+           this.isEnabled.value = false
+           this.timeoutMinutes.value = 30
+         }
++      }, (error) => {
++        console.error('Failed to load session timeout settings:', error)
++        // Use defaults on error
++        this.isEnabled.value = false
++        this.timeoutMinutes.value = 30
+       })
++      
+     } catch (error) {
+-      console.error('Failed to load session timeout settings:', error)
++      console.error('Failed to setup session timeout settings listener:', error)
++      // Use defaults on error
++      this.isEnabled.value = false
++      this.timeoutMinutes.value = 30
+     }
+   }
+ 
+@@ -91,6 +108,17 @@ class SessionTimeoutManager {
+         updatedBy: auth.currentUser?.uid
+       }, { merge: true })
+       
++      // Immediately update local values and restart timeout
++      this.isEnabled.value = enabled
++      this.timeoutMinutes.value = minutes
++      
++      console.log(`✅ Session timeout settings updated: enabled=${enabled}, timeout=${minutes}min`)
++      
++      // Restart timeout with new settings if user is logged in
++      if (auth.currentUser) {
++        this.resetTimeout()
++      }
++      
+     } catch (error) {
+       console.error('Failed to update session timeout settings:', error)
+     }
+@@ -105,38 +133,31 @@ class SessionTimeoutManager {
+   }
+ 
+   handleActivity() {
+-    
+-    if (!this.isEnabled.value) return
++    if (!this.isEnabled.value || !auth.currentUser) return
+     
+     const now = Date.now()
+     
+-    // Throttle activity handling to prevent infinite loops
+-    // Only reset timeout if it's been more than 30 seconds since last reset
+-    if (now - this.lastActivity < 30000) {
++    // Reduced throttling - only every 10 seconds for more responsive timeout resets
++    if (now - this.lastActivity < 10000) {
+       this.lastActivity = now
+       return
+     }
+     
+     this.lastActivity = now
+     
+-    // Only extend session if warning is showing or it's been a while
++    // Always reset timeout on activity
++    console.log('🔄 Activity detected - resetting session timeout')
++    this.resetTimeout()
++    
++    // Hide warning if showing
+     if (this.showWarning.value) {
+       this.hideWarning()
+-      this.resetTimeout()
+-    } else {
+-      // Just update last activity without resetting timeout constantly
+-      // This prevents the infinite loop while still tracking activity
+     }
+   }
+ 
+   resetTimeout() {
+-    console.log('🔒 DEBUG: resetTimeout() called')
+-    console.log('🔒 DEBUG: isEnabled.value:', this.isEnabled.value)
+-    console.log('🔒 DEBUG: auth.currentUser exists?', !!auth.currentUser)
+-    console.log('🔒 DEBUG: auth.currentUser uid:', auth.currentUser?.uid)
+-    
+     if (!this.isEnabled.value || !auth.currentUser) {
+-      console.log('🔒 DEBUG: resetTimeout() early return - not enabled or no user')
++      console.log('⚠️ Session timeout disabled or no user - skipping reset')
+       return
+     }
+     
+@@ -145,26 +166,19 @@ class SessionTimeoutManager {
+     
+     const now = Date.now()
+     const timeoutMs = Math.round(this.timeoutMinutes.value * 60 * 1000)
+-    const warningMs = Math.max(1000, timeoutMs - (1 * 60 * 1000)) // Show warning 1 minute before timeout for debugging
++    const warningMs = Math.max(5000, timeoutMs - (2 * 60 * 1000)) // Show warning 2 minutes before timeout
+     
+-    // Reduce console spam - only log every 5 minutes or when warning shows
+-    const shouldLog = !this.lastLogTime || (now - this.lastLogTime > 300000) || this.showWarning.value
+-    if (shouldLog) {
+-      console.log(`🔒 Session timeout reset: ${this.timeoutMinutes.value} minutes (${timeoutMs}ms), warning in ${warningMs}ms`)
+-      this.lastLogTime = now
+-    }
++    console.log(`🔒 Session timeout reset: ${this.timeoutMinutes.value} minutes (${timeoutMs}ms), warning in ${warningMs}ms`)
+     
+-    // Set warning timeout - always set if timeout is more than 10 seconds
+-    if (timeoutMs > 10000) {
+-      this.warningTimeoutId = setTimeout(() => {
+-        console.log('🚨 Showing session warning')
+-        this.showSessionWarning()
+-      }, warningMs)
+-    }
++    // Set warning timeout
++    this.warningTimeoutId = setTimeout(() => {
++      console.log('🚨 Showing session warning')
++      this.showSessionWarning()
++    }, warningMs)
+     
+     // Set logout timeout
+     this.timeoutId = setTimeout(() => {
+-      console.log('⏰ Session timeout triggered')
++      console.log('⏰ Session timeout triggered - logging out user')
+       this.handleSessionTimeout()
+     }, timeoutMs)
+   }
+@@ -202,9 +216,6 @@ class SessionTimeoutManager {
+   }
+ 
+   async handleSessionTimeout() {
+-    console.log('🔒 DEBUG: handleSessionTimeout() called')
+-    console.log('🔒 DEBUG: auth.currentUser exists?', !!auth.currentUser)
+-    console.log('🔒 DEBUG: auth.currentUser uid:', auth.currentUser?.uid)
+     
+     console.log('🔒 Handling session timeout')
+     
+@@ -280,9 +291,10 @@ class SessionTimeoutManager {
+       })
+     }
+     
+-    // Unsubscribe from settings changes
++    // Unsubscribe from settings listener
+     if (this.unsubscribeSettings) {
+       this.unsubscribeSettings()
++      this.unsubscribeSettings = null
+     }
+   }
+ }
+diff --git a/src/composables/useStudentFilters.js b/src/composables/useStudentFilters.js
+index cf04826..4ffcd24 100644
+--- a/src/composables/useStudentFilters.js
++++ b/src/composables/useStudentFilters.js
+@@ -23,6 +23,7 @@ export function useStudentFilters(studentData) {
+     teacher: 'all',
+     paraeducator: 'all',
+     plan: 'all',
++    serviceProvider: 'all',
+     search: '',
+     providerView: 'all',
+     viewMode: 'list'
+@@ -52,6 +53,7 @@ export function useStudentFilters(studentData) {
+     currentFilters.teacher = 'all'
+     currentFilters.paraeducator = 'all'
+     currentFilters.plan = 'all'
++    currentFilters.serviceProvider = 'all'
+     currentFilters.search = ''
+     currentFilters.providerView = 'all'
+     currentFilters.viewMode = 'list'
+@@ -62,7 +64,8 @@ export function useStudentFilters(studentData) {
+   const getCurrentFilters = () => {
+     return {
+       paraeducator: currentFilters.paraeducator,
+-      teacher: currentFilters.teacher
++      teacher: currentFilters.teacher,
++      providerView: currentFilters.providerView
+     }
+   }
+ 
+@@ -98,7 +101,8 @@ export function useStudentFilters(studentData) {
+           if (typeof data === 'string') {
+             return data === currentUser.value?.uid
+           } else if (data && typeof data === 'object') {
+-            return data.teacherId === currentUser.value?.uid
++            // Treat service providers as teachers in class view: primary or co-teach
++            return data.teacherId === currentUser.value?.uid || (data.coTeaching?.caseManagerId === currentUser.value?.uid)
+           }
+           return false
+         }) : false
+@@ -143,14 +147,16 @@ export function useStudentFilters(studentData) {
+         const schedule = getSchedule(s)
+         if (!schedule) return false
+         
+-        // Handle both simple schedule structure (period -> teacherId) and complex structure (period -> {teacherId, subject, room})
++        // Match teacher either as primary teacher or co-teacher (case manager in coTeaching)
+         return Object.entries(schedule).some(([period, data]) => {
+           if (typeof data === 'string') {
+             // Simple structure: period -> teacherId
+             return data === filters.teacher
+           } else if (data && typeof data === 'object') {
+-            // Complex structure: period -> {teacherId, subject, room}
+-            return data.teacherId === filters.teacher
++            // Complex structure: period -> { teacherId, coTeaching: { caseManagerId } }
++            const primaryMatch = data.teacherId === filters.teacher
++            const coTeachMatch = (data.coTeaching?.caseManagerId) === filters.teacher
++            return primaryMatch || coTeachMatch
+           }
+           return false
+         })
+@@ -199,6 +205,32 @@ export function useStudentFilters(studentData) {
+       })
+     }
+ 
++    // Apply service provider filter
++    if (filters.serviceProvider && filters.serviceProvider !== 'all') {
++      result = result.filter(s => {
++        // Check if the student has the selected service provider assigned
++        const providers = s.app?.providers || {}
++        
++        // Look through all provider fields to see if the selected provider is assigned
++        for (const [fieldName, providerId] of Object.entries(providers)) {
++          if (providerId === filters.serviceProvider) {
++            return true
++          }
++        }
++        
++        // Also check legacy provider fields (for backward compatibility)
++        const legacyFields = [
++          'speechId', 'speech_id', 'otId', 'ot_id', 'mhId', 'mh_id', 
++          'ptId', 'pt_id', 'scId', 'sc_id', 'trId', 'tr_id',
++          'audId', 'aud_id', 'viId', 'vi_id', 'atId', 'at_id',
++          'dhhId', 'dhh_id', 'omId', 'om_id', 'bisId', 'bis_id',
++          'hnId', 'hn_id', 'swId', 'sw_id'
++        ]
++        
++        return legacyFields.some(field => s[field] === filters.serviceProvider)
++      })
++    }
++
+     // Apply sorting
+     if (filters.sortBy) {
+       result.sort((a, b) => {
+diff --git a/src/composables/useStudentViews.js b/src/composables/useStudentViews.js
+index 8ae4f23..b769ef9 100644
+--- a/src/composables/useStudentViews.js
++++ b/src/composables/useStudentViews.js
+@@ -121,9 +121,10 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
+               : [aideData.classAssignment[period]]
+             shouldIncludeStudentInPeriod = aideTeacherIds.includes(teacherId)
+           }
+-        } else if (['admin', 'administrator'].includes(currentRole)) {
+-          // Admins can see periods when filtering by specific teacher or paraeducator
++        } else if (['admin', 'administrator', 'admin_504', 'sped_chair'].includes(currentRole)) {
++          // Admin-family roles: allow class view only with specific filters
+           if (isTeacherFilter) {
++            // Group by the selected teacher's periods (primary or co-teach)
+             shouldIncludeStudentInPeriod = teacherId === currentFilters.teacher || coTeacherId === currentFilters.teacher
+           } else if (isParaeducatorFilter) {
+             const aideData = aideAssignment.value[currentFilters.paraeducator]
+@@ -133,9 +134,12 @@ export function useStudentViews(studentData, filterData, roleBasedStudents = nul
+                 : [aideData.classAssignment[period]]
+               shouldIncludeStudentInPeriod = aideTeacherIds.includes(teacherId)
+             }
++          } else if (currentRole === 'sped_chair' && getCurrentFilters().providerView === 'service_provider') {
++            // SPED chair in SP mode with no teacher filter: behave like a teacher (their own periods)
++            shouldIncludeStudentInPeriod = teacherId === currentUserId || coTeacherId === currentUserId
+           } else {
+-            // Admin with no specific filter - include all periods (shouldn't normally happen due to isClassViewDisabled)
+-            shouldIncludeStudentInPeriod = true
++            // No applicable filter: do not include (class view should be disabled upstream)
++            shouldIncludeStudentInPeriod = false
+           }
+         } else {
+           // Teachers, case managers, service providers, etc. - only show periods they teach/co-teach
+-- 
+2.39.5 (Apple Git-154)
+
+
+From fdbe6e48c3bb6fa911016bc501687bdaa5d11fd7 Mon Sep 17 00:00:00 2001
+From: rpdavis <bcrash01@yahoo.com>
+Date: Sat, 16 Aug 2025 22:42:11 -0700
+Subject: [PATCH 2/2] Fix session timeout settings persistence issue
+
+- Change default behavior to enabled (true) unless explicitly set to false
+- Add auto-recovery logic to create missing app_settings/security document
+- Implement defensive programming for missing or corrupted settings
+- Add error recovery during onSnapshot failures
+- Ensure session timeout doesn't 'unset and turn off' unexpectedly
+
+This fixes the issue where session timeout would disable itself after being set.
+---
+ src/composables/useSessionTimeout.js | 39 +++++++++++++++++++++++-----
+ 1 file changed, 32 insertions(+), 7 deletions(-)
+
+diff --git a/src/composables/useSessionTimeout.js b/src/composables/useSessionTimeout.js
+index 7f6e861..e2b474e 100644
+--- a/src/composables/useSessionTimeout.js
++++ b/src/composables/useSessionTimeout.js
+@@ -64,7 +64,8 @@ class SessionTimeoutManager {
+       this.unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
+         if (doc.exists()) {
+           const data = doc.data()
+-          const newEnabled = data.sessionTimeoutEnabled || false
++          // More defensive: check for explicit false, otherwise default to true
++          const newEnabled = data.sessionTimeoutEnabled !== false
+           const newMinutes = data.sessionTimeoutMinutes || 30
+           
+           console.log(`🔧 Session timeout settings updated: enabled=${newEnabled}, timeout=${newMinutes}min`)
+@@ -78,22 +79,46 @@ class SessionTimeoutManager {
+             this.resetTimeout()
+           }
+         } else {
+-          // No settings document exists, use defaults
+-          console.log('🔧 No session timeout settings found, using defaults')
+-          this.isEnabled.value = false
++          // No settings document exists, create it with defaults
++          console.log('🔧 No session timeout settings found, creating with defaults')
++          const defaultSettings = {
++            sessionTimeoutEnabled: true,
++            sessionTimeoutMinutes: 30,
++            createdAt: new Date().toISOString(),
++            createdBy: 'system_auto_create'
++          }
++          
++          // Create the document
++          setDoc(settingsRef, defaultSettings, { merge: true }).catch(error => {
++            console.error('Failed to create default session timeout settings:', error)
++          })
++          
++          // Set local values
++          this.isEnabled.value = true
+           this.timeoutMinutes.value = 30
+         }
+       }, (error) => {
+         console.error('Failed to load session timeout settings:', error)
+-        // Use defaults on error
+-        this.isEnabled.value = false
++        // Use defaults on error - but still try to create the document
++        this.isEnabled.value = true
+         this.timeoutMinutes.value = 30
++        
++        // Try to create the missing document
++        const defaultSettings = {
++          sessionTimeoutEnabled: true,
++          sessionTimeoutMinutes: 30,
++          createdAt: new Date().toISOString(),
++          createdBy: 'system_error_recovery'
++        }
++        setDoc(settingsRef, defaultSettings, { merge: true }).catch(err => {
++          console.error('Failed to create session timeout settings during error recovery:', err)
++        })
+       })
+       
+     } catch (error) {
+       console.error('Failed to setup session timeout settings listener:', error)
+       // Use defaults on error
+-      this.isEnabled.value = false
++      this.isEnabled.value = true
+       this.timeoutMinutes.value = 30
+     }
+   }
+-- 
+2.39.5 (Apple Git-154)
+

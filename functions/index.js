@@ -44,6 +44,9 @@ const teacherFeedbackFunctions = require("./teacherFeedback/index");
 // Import test functions
 const { testSchools } = require("./test-schools");
 
+// Import testing sync functions
+const { syncTestingAccommodations } = require("./modules/testingSync");
+
 // Import setup functions
 const { setupSharedDrive } = require("./setup-shared-drive");
 
@@ -908,3 +911,6 @@ exports.syncCustomClaims = onCall(
     throw new HttpsError("internal", "Failed to sync custom claims");
   }
 });
+
+// Export testing sync function
+exports.syncTestingAccommodations = syncTestingAccommodations;
